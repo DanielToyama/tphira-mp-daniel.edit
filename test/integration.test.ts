@@ -121,8 +121,24 @@ describe("端到端（mock 远端 HTTP）", () => {
 
       const resp = await originalFetch(`http://127.0.0.1:${httpPort}/room`);
       expect(resp.ok).toBe(true);
-      const json = (await resp.json()) as { rooms: string[] };
-      expect(json.rooms).toEqual(["room1"]);
+      const json = (await resp.json()) as {
+        rooms: Array<{
+          roomid: string;
+          cycle: boolean;
+          lock: boolean;
+          host: { name: string; id: string };
+          state: string;
+          chart: { name: string; id: string } | null;
+          players: Array<{ name: string; id: number }>;
+        }>;
+        total: number;
+      };
+      expect(json.total).toBe(1);
+      expect(json.rooms.length).toBe(1);
+      expect(json.rooms[0]!.roomid).toBe("room1");
+      expect(json.rooms[0]!.host).toEqual({ name: "Alice", id: "100" });
+      expect(json.rooms[0]!.chart).toBe(null);
+      expect(json.rooms[0]!.players).toEqual([{ name: "Alice", id: 100 }]);
     } finally {
       await alice.close();
       await bob.close();
