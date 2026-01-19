@@ -3,8 +3,6 @@ name: 构建并推送 Docker 镜像
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
     tags:
       - "v*"
 
