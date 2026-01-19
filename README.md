@@ -42,6 +42,33 @@ pnpm run build
 pnpm start -- --port 12346
 ```
 
+## Docker 运行
+
+镜像托管在 GHCR：
+
+- `ghcr.io/Pimeng/phira-mp-ts`
+
+启动示例（使用环境变量生成配置文件）：
+
+```bash
+docker run --rm -p 12346:12346 -p 12347:12347 ^
+  -e HOST="::" ^
+  -e PORT=12346 ^
+  -e HTTP_SERVICE=true ^
+  -e HTTP_PORT=12347 ^
+  -e ROOM_MAX_USERS=8 ^
+  -e MONITORS="2" ^
+  ghcr.io/Pimeng/phira-mp-ts:latest
+```
+
+也可以直接通过 `SERVER_CONFIG_YAML` 提供完整的 YAML 配置：
+
+```bash
+docker run --rm -p 12346:12346 -p 12347:12347 ^
+  -e SERVER_CONFIG_YAML="HOST: \"::\"\nPORT: 12346\nHTTP_SERVICE: true\nHTTP_PORT: 12347\nROOM_MAX_USERS: 8\nmonitors:\n  - 2\n" ^
+  ghcr.io/Pimeng/phira-mp-ts:latest
+```
+
 ## 日志系统
 
 - 输出位置：运行时会自动创建 `logs/` 文件夹，并按“运行设备本地日期”每天生成一个日志文件，例如 `logs/2026-01-19.log`。
