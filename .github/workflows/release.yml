@@ -1,4 +1,4 @@
-name: Build and Release
+name: 构建并发布 Release
 
 on:
   workflow_dispatch:
