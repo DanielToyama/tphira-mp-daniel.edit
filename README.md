@@ -18,7 +18,7 @@
 镜像托管在 GHCR：
 
 - `ghcr.io/Pimeng/phira-mp-ts`<br>
-镜像 -> `ghcr.1ms.run/Pimeng/phira-mp-ts`<br>
+镜像 -> `ghcr.1ms.run/pimeng/phira-mp-ts`<br>
 建议优先使用镜像源而并非 ghcr.io
 
 启动示例（使用环境变量生成配置文件）：
@@ -31,7 +31,7 @@ docker run --rm -p 12346:12346 -p 12347:12347 ^
   -e HTTP_PORT=12347 ^
   -e ROOM_MAX_USERS=8 ^
   -e MONITORS="2" ^
-  ghcr.1ms.run/Pimeng/phira-mp-ts:latest
+  ghcr.1ms.run/pimeng/phira-mp-ts:latest
 ```
 
 也可以直接通过 `SERVER_CONFIG_YAML` 提供完整的 YAML 配置：
@@ -39,7 +39,7 @@ docker run --rm -p 12346:12346 -p 12347:12347 ^
 ```bash
 docker run --rm -p 12346:12346 -p 12347:12347 ^
   -e SERVER_CONFIG_YAML="HOST: \"::\"\nPORT: 12346\nHTTP_SERVICE: true\nHTTP_PORT: 12347\nROOM_MAX_USERS: 8\nmonitors:\n  - 2\n" ^
-  ghcr.1ms.run/Pimeng/phira-mp-ts:latest
+  ghcr.1ms.run/pimeng/phira-mp-ts:latest
 ```
 
 - 可选环境变量：
@@ -51,6 +51,10 @@ docker run --rm -p 12346:12346 -p 12347:12347 ^
 
 ## 🚇 在 RailWay上部署
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/b5IFPX?referralCode=GjgH_Y)
+
+## 🇿 在 Zeabur 上部署
+
+[![Deploy on Zeabur](https://zeabur.com/button.svg)](https://zeabur.com/templates/5CSUU4?referralCode=pimeng7143)
 
 ## 🔧 服务端配置（server_config.yml）
 
