@@ -20,6 +20,13 @@ cli-invalid-monitors = Invalid MONITORS
 label-monitor-suffix = (monitor)
 
 chat-welcome = Hello "{ $userName }"! Welcome to { $serverName }!
+chat-separator = ==================
+chat-hitokoto = { $quote } — { $from }
+chat-hitokoto-from-unknown = Unknown
+chat-hitokoto-unavailable = Failed to fetch quote
+chat-roomlist-title = Available rooms:
+chat-roomlist-empty = No available rooms
+chat-roomlist-item = { $id } ({ $count }/{ $max })
 
 chat-game-summary =
     Match summary:

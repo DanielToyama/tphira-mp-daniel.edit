@@ -14,6 +14,20 @@ import { tl, type Language } from "./l10n.js";
 const HOST = "https://phira.5wyxi.com";
 const FETCH_TIMEOUT_MS = 8000;
 
+const HITOKOTO_URL = "https://v1.hitokoto.cn/";
+const HITOKOTO_FETCH_TIMEOUT_MS = 3000;
+const HITOKOTO_CACHE_TTL_MS = 60_000;
+const HITOKOTO_MIN_INTERVAL_MS = 600;
+
+type HitokotoValue = { quote: string; from: string };
+
+let hitokotoCache: { value: HitokotoValue | null; fetchedAt: number; lastAttemptAt: number; inFlight: Promise<HitokotoValue | null> | null } = {
+  value: null,
+  fetchedAt: 0,
+  lastAttemptAt: 0,
+  inFlight: null
+};
+
 async function fetchWithTimeout(input: string | URL, init: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -31,6 +45,44 @@ function pickRandom<T>(arr: readonly T[]): T | null {
   if (arr.length === 0) return null;
   const idx = Math.floor(Math.random() * arr.length);
   return arr[idx] ?? null;
+}
+
+async function fetchHitokoto(): Promise<HitokotoValue | null> {
+  const res = await fetchWithTimeout(HITOKOTO_URL, {}, HITOKOTO_FETCH_TIMEOUT_MS);
+  if (!res.ok) return null;
+  const json = (await res.json()) as { hitokoto?: unknown; from?: unknown; from_who?: unknown };
+  const quote = typeof json.hitokoto === "string" ? json.hitokoto.trim() : "";
+  if (!quote) return null;
+  const fromWho = typeof json.from_who === "string" ? json.from_who.trim() : "";
+  const from = typeof json.from === "string" ? json.from.trim() : "";
+  const displayFrom = fromWho || from;
+  return { quote, from: displayFrom };
+}
+
+async function getHitokotoCached(): Promise<HitokotoValue | null> {
+  const now = Date.now();
+  if (hitokotoCache.value && now - hitokotoCache.fetchedAt <= HITOKOTO_CACHE_TTL_MS) return hitokotoCache.value;
+  if (hitokotoCache.inFlight) return await hitokotoCache.inFlight;
+  if (hitokotoCache.value && now - hitokotoCache.lastAttemptAt < HITOKOTO_MIN_INTERVAL_MS) return hitokotoCache.value;
+
+  hitokotoCache.lastAttemptAt = now;
+  hitokotoCache.inFlight = (async () => {
+    try {
+      const v = await fetchHitokoto();
+      if (v) {
+        hitokotoCache.value = v;
+        hitokotoCache.fetchedAt = Date.now();
+        return v;
+      }
+      return hitokotoCache.value;
+    } catch {
+      return hitokotoCache.value;
+    } finally {
+      hitokotoCache.inFlight = null;
+    }
+  })();
+
+  return await hitokotoCache.inFlight;
 }
 
 export class Session {
@@ -165,6 +217,8 @@ export class Session {
           content: user.lang.format("chat-welcome", { userName: user.name, serverName: this.state.serverName })
         }
       });
+
+      void this.sendWelcomeExtras(user).catch(() => {});
     } catch (e) {
       const localized = this.localizeError(this.state.serverLang, e instanceof Error ? e : new Error("auth-failed"));
       this.state.logger.warn(tl(this.state.serverLang, "log-auth-failed", { id: this.id, reason: localized }));
@@ -172,6 +226,50 @@ export class Session {
       this.panicked = true;
       await this.markLost();
     }
+  }
+
+  private async sendSystemChat(content: string): Promise<void> {
+    await this.trySend({ type: "Message", message: { type: "Chat", user: 0, content } });
+  }
+
+  private async getAvailableRoomsText(lang: Language): Promise<string> {
+    const rooms = await this.state.mutex.runExclusive(async () => {
+      const out: Array<{ id: string; count: number; max: number }> = [];
+      for (const [id, room] of this.state.rooms) {
+        if (String(id).startsWith("_")) continue;
+        if (room.locked) continue;
+        if (room.state.type !== "SelectChart") continue;
+        const count = room.userIds().length;
+        if (count >= room.maxUsers) continue;
+        out.push({ id: String(id), count, max: room.maxUsers });
+      }
+      out.sort((a, b) => a.id.localeCompare(b.id));
+      return out;
+    });
+
+    if (rooms.length === 0) return lang.format("chat-roomlist-empty");
+
+    const joiner = lang.lang === "zh-CN" ? "；" : "; ";
+    const items = rooms.map((r) => lang.format("chat-roomlist-item", { id: r.id, count: r.count, max: r.max }));
+    return items.join(joiner);
+  }
+
+  private async sendWelcomeExtras(user: User): Promise<void> {
+    const lang = user.lang;
+
+    await this.sendSystemChat(lang.format("chat-separator"));
+
+    const hitokoto = await getHitokotoCached();
+    if (hitokoto) {
+      const fromText = hitokoto.from ? hitokoto.from : lang.format("chat-hitokoto-from-unknown");
+      await this.sendSystemChat(lang.format("chat-hitokoto", { quote: hitokoto.quote, from: fromText }));
+    } else {
+      await this.sendSystemChat(lang.format("chat-hitokoto-unavailable"));
+    }
+
+    await this.sendSystemChat(lang.format("chat-separator"));
+    await this.sendSystemChat(lang.format("chat-roomlist-title"));
+    await this.sendSystemChat(await this.getAvailableRoomsText(lang));
   }
 
   private async markLost(): Promise<void> {

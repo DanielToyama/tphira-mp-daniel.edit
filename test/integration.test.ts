@@ -19,10 +19,22 @@ async function waitFor(cond: () => boolean, timeoutMs = 2000): Promise<void> {
 
 describe("端到端（mock 远端 HTTP）", () => {
   const originalFetch = globalThis.fetch;
+  let hitokotoCalls = 0;
 
   beforeAll(() => {
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
+      if (url.startsWith("https://v1.hitokoto.cn/")) {
+        hitokotoCalls += 1;
+        return new Response(
+          JSON.stringify({
+            hitokoto: "欲买桂花同载酒，荒泷天下第一斗。",
+            from: "原神",
+            from_who: "钟离&荒泷一斗"
+          }),
+          { status: 200 }
+        );
+      }
       if (url.endsWith("/me")) {
         const auth = String(init?.headers && (init.headers as any).Authorization ? (init.headers as any).Authorization : (init?.headers as any)?.get?.("Authorization") ?? "");
         const token = auth.replace(/^Bearer\s+/i, "");
@@ -78,9 +90,24 @@ describe("端到端（mock 远端 HTTP）", () => {
 
     try {
       await alice.authenticate("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-      await bob.authenticate("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
-
       await alice.createRoom("room1");
+      await waitFor(() => hitokotoCalls >= 1);
+
+      await bob.authenticate("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+      const bobChat: string[] = [];
+      await waitFor(() => {
+        const batch = bob.takeMessages()
+          .filter((m) => m.type === "Chat" && m.user === 0)
+          .map((m) => (m as any).content as string);
+        bobChat.push(...batch);
+        return bobChat.some((s) => s.includes("当前可用的房间如下："));
+      }, 2000);
+
+      expect(bobChat.join("\n")).toContain("欲买桂花同载酒，荒泷天下第一斗。");
+      expect(bobChat.join("\n")).toContain("当前可用的房间如下：");
+      expect(bobChat.join("\n")).toContain("room1（1/8）");
+      expect(hitokotoCalls).toBe(1);
+
       await bob.joinRoom("room1", true);
 
       await alice.selectChart(1);
