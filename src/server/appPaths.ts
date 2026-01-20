@@ -1,6 +1,5 @@
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join, resolve } from "node:path";
 
 export type AppPaths = {
   rootDir: string;
@@ -37,17 +36,20 @@ export function getAppPaths(): AppPaths {
     return cached;
   }
 
-  const here = dirname(fileURLToPath(import.meta.url));
-  const nearCandidates = [join(here, "..", ".."), join(here, "..", "..", "..")];
-  for (const rootDir of nearCandidates) {
-    if (!existsSync(join(rootDir, "locales"))) continue;
-    cached = {
-      rootDir,
-      configPath: join(rootDir, "server_config.yml"),
-      localesDir: join(rootDir, "locales"),
-      logsDir: join(rootDir, "logs")
-    };
-    return cached;
+  const argv1 = process.argv[1] ? resolve(process.argv[1]) : null;
+  const entryDir = argv1 ? dirname(argv1) : null;
+  if (entryDir) {
+    const nearCandidates = [join(entryDir, "..", ".."), join(entryDir, "..", "..", "..")];
+    for (const rootDir of nearCandidates) {
+      if (!existsSync(join(rootDir, "locales"))) continue;
+      cached = {
+        rootDir,
+        configPath: join(rootDir, "server_config.yml"),
+        localesDir: join(rootDir, "locales"),
+        logsDir: join(rootDir, "logs")
+      };
+      return cached;
+    }
   }
 
   const rootDir = dirname(process.execPath);

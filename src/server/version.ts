@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
 export function readAppVersion(): string {
   const env1 = process.env.PHIRA_MP_VERSION?.trim();
@@ -8,11 +8,11 @@ export function readAppVersion(): string {
   const env2 = process.env.npm_package_version?.trim();
   if (env2) return env2;
 
-  const here = dirname(fileURLToPath(import.meta.url));
+  const argv1 = process.argv[1] ? resolve(process.argv[1]) : null;
+  const entryDir = argv1 ? dirname(argv1) : null;
   const candidates = [
     join(process.cwd(), "package.json"),
-    join(here, "..", "..", "package.json"),
-    join(here, "..", "..", "..", "package.json"),
+    ...(entryDir ? [join(entryDir, "..", "..", "package.json"), join(entryDir, "..", "..", "..", "package.json")] : []),
     join(dirname(process.execPath), "package.json")
   ];
 
