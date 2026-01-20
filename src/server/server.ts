@@ -104,6 +104,7 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
         socket,
         expectedVersion: 1,
         codec,
+        fastPath: (cmd) => cmd.type === "Ping",
         handler: async (cmd) => {
           await session.onCommand(cmd);
         }

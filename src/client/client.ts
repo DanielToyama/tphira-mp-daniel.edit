@@ -86,6 +86,7 @@ export class Client {
       socket,
       versionToSend: 1,
       codec,
+      fastPath: (cmd) => cmd.type === "Pong",
       handler: async (cmd) => {
         await client.onServerCommand(cmd);
       }

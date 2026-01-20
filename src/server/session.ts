@@ -11,6 +11,20 @@ import type { Chart, RecordData } from "./types.js";
 import { User } from "./user.js";
 
 const HOST = "https://phira.5wyxi.com";
+const FETCH_TIMEOUT_MS = 8000;
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") throw new Error("request timeout");
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function pickRandom<T>(arr: readonly T[]): T | null {
   if (arr.length === 0) return null;
@@ -41,6 +55,9 @@ export class Session {
 
     this.socket.on("close", () => void this.markLost());
     this.socket.on("error", () => void this.markLost());
+    this.socket.on("data", () => {
+      this.lastRecv = Date.now();
+    });
 
     this.heartbeatTimer = setInterval(() => {
       if (this.lost) return;
@@ -89,9 +106,9 @@ export class Session {
     try {
       if (token.length !== 32) throw new Error("invalid token");
 
-      const me = await fetch(`${HOST}/me`, {
+      const me = await fetchWithTimeout(`${HOST}/me`, {
         headers: { Authorization: `Bearer ${token}` }
-      }).then(async (r) => {
+      }, FETCH_TIMEOUT_MS).then(async (r) => {
         if (!r.ok) throw new Error("failed to fetch info");
         return (await r.json()) as { id: number; name: string; language: string };
       });
@@ -462,21 +479,25 @@ export class Session {
 
   private async broadcastRoom(room: Room, cmd: ServerCommand): Promise<void> {
     const ids = [...room.userIds(), ...room.monitorIds()];
+    const tasks: Promise<void>[] = [];
     for (const id of ids) {
       const u = this.state.users.get(id);
-      if (u) await u.trySend(cmd);
+      if (u) tasks.push(u.trySend(cmd));
     }
+    await Promise.allSettled(tasks);
   }
 
   private async broadcastRoomMonitors(room: Room, cmd: ServerCommand): Promise<void> {
+    const tasks: Promise<void>[] = [];
     for (const id of room.monitorIds()) {
       const u = this.state.users.get(id);
-      if (u) await u.trySend(cmd);
+      if (u) tasks.push(u.trySend(cmd));
     }
+    await Promise.allSettled(tasks);
   }
 
   private async fetchChart(id: number): Promise<Chart> {
-    const res = await fetch(`${HOST}/chart/${id}`).then(async (r) => {
+    const res = await fetchWithTimeout(`${HOST}/chart/${id}`, {}, FETCH_TIMEOUT_MS).then(async (r) => {
       if (!r.ok) throw new Error("failed to fetch chart");
       return (await r.json()) as Chart;
     });
@@ -484,7 +505,7 @@ export class Session {
   }
 
   private async fetchRecord(id: number): Promise<RecordData> {
-    return await fetch(`${HOST}/record/${id}`).then(async (r) => {
+    return await fetchWithTimeout(`${HOST}/record/${id}`, {}, FETCH_TIMEOUT_MS).then(async (r) => {
       if (!r.ok) throw new Error("failed to fetch record");
       return (await r.json()) as RecordData;
     });

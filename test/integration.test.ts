@@ -105,6 +105,77 @@ describe("端到端（mock 远端 HTTP）", () => {
     }
   });
 
+  test("认证阻塞时仍能响应 Ping（避免心跳误判/客户端超时）", async () => {
+    const prevFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.endsWith("/me")) {
+        await sleep(3500);
+        const auth = String(init?.headers && (init.headers as any).Authorization ? (init.headers as any).Authorization : (init?.headers as any)?.get?.("Authorization") ?? "");
+        const token = auth.replace(/^Bearer\s+/i, "");
+        if (token === "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") {
+          return new Response(JSON.stringify({ id: 100, name: "Alice", language: "zh-CN" }), { status: 200 });
+        }
+        return new Response("unauthorized", { status: 401 });
+      }
+      return originalFetch(input, init);
+    }) as typeof fetch;
+
+    const running = await startServer({ port: 0, config: { monitors: [] } });
+    const port = running.address().port;
+    const alice = await Client.connect("127.0.0.1", port, { timeoutMs: 20000 });
+
+    try {
+      const auth = alice.authenticate("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+      await sleep(200);
+      await expect(alice.ping()).resolves.toBeGreaterThanOrEqual(0);
+      await auth;
+    } finally {
+      globalThis.fetch = prevFetch;
+      await alice.close();
+      await running.close();
+    }
+  }, 10000);
+
+  test("观战者不读数据导致广播背压时，结算仍能正常结束（不应卡死/心跳误断）", async () => {
+    const running = await startServer({ port: 0, config: { monitors: [200] } });
+    const port = running.address().port;
+    const alice = await Client.connect("127.0.0.1", port, { timeoutMs: 30000 });
+    const bob = await Client.connect("127.0.0.1", port, { timeoutMs: 30000 });
+
+    try {
+      await alice.authenticate("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+      await bob.authenticate("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+
+      await alice.createRoom("room1");
+      await bob.joinRoom("room1", true);
+
+      await alice.selectChart(1);
+      await alice.requestStart();
+      await bob.ready();
+
+      await waitFor(() => alice.roomState()?.type === "Playing", 5000);
+
+      const bobSocket = ((bob as any).stream as any).socket as net.Socket;
+      bobSocket.pause();
+      (bobSocket as any).setRecvBufferSize?.(1024);
+
+      const frames: TouchFrame[] = Array.from({ length: 200 }, (_, i) => ({ time: i, points: [[0, { x: 0, y: 0 }]] }));
+      for (let i = 0; i < 250; i++) {
+        await alice.sendTouches(frames);
+      }
+
+      await sleep(200);
+      await alice.played(1);
+      await waitFor(() => alice.roomState()?.type === "SelectChart", 20000);
+      await expect(alice.ping()).resolves.toBeGreaterThanOrEqual(0);
+    } finally {
+      await alice.close();
+      await bob.close();
+      await running.close();
+    }
+  }, 30000);
+
   test("协议版本不为 1 时直接断开且不触发认证请求", async () => {
     const running = await startServer({ port: 0, config: { monitors: [200] } });
     const port = running.address().port;
