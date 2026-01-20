@@ -47,5 +47,8 @@ else
   fi
 fi
 
-exec "$@"
+if [ "${1:-}" = "node" ] && ! command -v node >/dev/null 2>&1 && [ -x "$APP_HOME/phira-mp-server" ]; then
+  exec "$APP_HOME/phira-mp-server"
+fi
 
+exec "$@"

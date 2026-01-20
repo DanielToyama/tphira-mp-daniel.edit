@@ -11,13 +11,12 @@
 
 （审核中，暂时无法快速部署）
 [![Deploy on RainYun](https://rainyun-apps.cn-nb1.rains3.com/materials/deploy-on-rainyun-en.svg)](https://app.rainyun.com/apps/rca/store/7497?ref=Pimeng_)
-[![通过雨云一键部署](https://rainyun-apps.cn-nb1.rains3.com/materials/deploy-on-rainyun-cn.svg)](https://app.rainyun.com/apps/rca/store/7497?ref=Pimeng_)
 
 ## 🐳 Docker 运行
 
 镜像托管在 GHCR：
 
-- `ghcr.io/Pimeng/phira-mp-ts`<br>
+- `ghcr.io/pimeng/phira-mp-ts`<br>
 镜像 -> `ghcr.1ms.run/pimeng/phira-mp-ts`<br>
 建议优先使用镜像源而并非 ghcr.io
 
