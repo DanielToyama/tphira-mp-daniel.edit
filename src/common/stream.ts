@@ -1,6 +1,8 @@
 import type net from "node:net";
 import { encodeLengthPrefixU32, tryDecodeFrame } from "./framing.js";
 
+const SEND_TIMEOUT_MS = 5000;
+
 export type StreamHandler<R> = (packet: R) => void | Promise<void>;
 
 export type StreamCodec<S, R> = {
@@ -13,14 +15,25 @@ export class Stream<S, R> {
   readonly version: number;
   private readonly codec: StreamCodec<S, R>;
   private readonly handler: StreamHandler<R>;
+  private readonly fastPath: ((packet: R) => boolean) | undefined;
   private recvBuffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
   private closed = false;
+  private decodeScheduled = false;
+  private processing = false;
+  private queue: R[] = [];
 
-  private constructor(socket: net.Socket, version: number, codec: StreamCodec<S, R>, handler: StreamHandler<R>) {
+  private constructor(
+    socket: net.Socket,
+    version: number,
+    codec: StreamCodec<S, R>,
+    handler: StreamHandler<R>,
+    fastPath: ((packet: R) => boolean) | undefined
+  ) {
     this.socket = socket;
     this.version = version;
     this.codec = codec;
     this.handler = handler;
+    this.fastPath = fastPath;
   }
 
   static async create<S, R>(opts: {
@@ -29,6 +42,7 @@ export class Stream<S, R> {
     expectedVersion?: number;
     codec: StreamCodec<S, R>;
     handler: StreamHandler<R>;
+    fastPath?: (packet: R) => boolean;
   }): Promise<Stream<S, R>> {
     opts.socket.setNoDelay(true);
 
@@ -79,13 +93,13 @@ export class Stream<S, R> {
       throw new Error(`不支持的协议版本：${version}`);
     }
 
-    const stream = new Stream<S, R>(opts.socket, version, opts.codec, opts.handler);
+    const stream = new Stream<S, R>(opts.socket, version, opts.codec, opts.handler, opts.fastPath);
     stream.recvBuffer = initialBuffer as Buffer<ArrayBufferLike>;
 
     stream.socket.on("data", (data) => {
       if (stream.closed) return;
       stream.recvBuffer = stream.recvBuffer.length === 0 ? data : Buffer.concat([stream.recvBuffer, data]);
-      void stream.drain();
+      stream.scheduleDecode();
     });
 
     stream.socket.on("close", () => {
@@ -96,7 +110,7 @@ export class Stream<S, R> {
       stream.closed = true;
     });
 
-    if (stream.recvBuffer.length > 0) setImmediate(() => void stream.drain());
+    if (stream.recvBuffer.length > 0) setImmediate(() => stream.scheduleDecode());
 
     return stream;
   }
@@ -105,7 +119,16 @@ export class Stream<S, R> {
     const body = this.codec.encodeSend(payload);
     const header = encodeLengthPrefixU32(body.length);
     await new Promise<void>((resolve, reject) => {
+      let done = false;
+      const timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        reject(new Error("send timeout"));
+      }, SEND_TIMEOUT_MS);
       this.socket.write(Buffer.concat([header, body]), (err) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
         if (err) reject(err);
         else resolve();
       });
@@ -117,10 +140,24 @@ export class Stream<S, R> {
     this.socket.destroy();
   }
 
-  private async drain(): Promise<void> {
+  private scheduleDecode(): void {
+    if (this.closed) return;
+    if (this.decodeScheduled) return;
+    this.decodeScheduled = true;
+    setImmediate(() => {
+      this.decodeScheduled = false;
+      this.decode();
+    });
+  }
+
+  private decode(): void {
+    if (this.closed) return;
     while (true) {
       const res = tryDecodeFrame(this.recvBuffer);
-      if (res.type === "need_more") return;
+      if (res.type === "need_more") {
+        if (this.queue.length > 0) void this.processQueue();
+        return;
+      }
       if (res.type === "error") {
         this.close();
         return;
@@ -134,7 +171,32 @@ export class Stream<S, R> {
         this.close();
         return;
       }
-      await this.handler(packet);
+      if (this.fastPath?.(packet) === true) {
+        void Promise.resolve(this.handler(packet)).catch(() => {
+          this.close();
+        });
+      } else {
+        this.queue.push(packet);
+      }
+    }
+  }
+
+  private async processQueue(): Promise<void> {
+    if (this.processing || this.closed) return;
+    this.processing = true;
+    try {
+      while (this.queue.length > 0) {
+        const packet = this.queue.shift()!;
+        try {
+          await this.handler(packet);
+        } catch {
+          this.close();
+          return;
+        }
+      }
+    } finally {
+      this.processing = false;
+      if (this.queue.length > 0 && !this.closed) void this.processQueue();
     }
   }
 }
