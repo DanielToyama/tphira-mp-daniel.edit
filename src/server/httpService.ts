@@ -2,6 +2,7 @@ import http from "node:http";
 import type net from "node:net";
 import { roomIdToString } from "../common/roomId.js";
 import type { ServerState } from "./state.js";
+import { Language, tl } from "./l10n.js";
 
 export type HttpService = {
   server: http.Server;
@@ -14,6 +15,7 @@ export async function startHttpService(opts: { state: ServerState; host: string;
 
   const server = http.createServer((req, res) => {
     void (async () => {
+      const lang = req.headers["accept-language"] ? new Language(String(req.headers["accept-language"])) : state.serverLang;
       const url = new URL(req.url ?? "/", "http://localhost");
 
       if (req.method === "GET" && url.pathname === "/room") {
@@ -72,15 +74,16 @@ export async function startHttpService(opts: { state: ServerState; host: string;
 
       res.statusCode = 404;
       res.setHeader("content-type", "text/plain; charset=utf-8");
-      res.end("not found");
+      res.end(tl(lang, "http-not-found"));
     })().catch(() => {
       if (res.headersSent) {
         res.end();
         return;
       }
+      const lang = req.headers["accept-language"] ? new Language(String(req.headers["accept-language"])) : state.serverLang;
       res.statusCode = 500;
       res.setHeader("content-type", "text/plain; charset=utf-8");
-      res.end("internal error");
+      res.end(tl(lang, "http-internal-error"));
     });
   });
 

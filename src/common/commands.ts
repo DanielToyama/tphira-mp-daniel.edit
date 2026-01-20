@@ -211,7 +211,7 @@ function decodeRoomState(r: BinaryReader): RoomState {
     case 2:
       return { type: "Playing" };
     default:
-      throw new Error("RoomState 标签不合法");
+      throw new Error("proto-roomstate-tag-invalid");
   }
 }
 
@@ -229,7 +229,7 @@ function encodeClientRoomState(w: BinaryWriter, v: ClientRoomState): void {
   for (const k of keys) {
     w.writeI32(k);
     const info = v.users.get(k);
-    if (!info) throw new Error("users 键不存在");
+    if (!info) throw new Error("proto-users-key-missing");
     encodeUserInfo(w, info);
   }
 }
@@ -370,7 +370,7 @@ function decodeMessage(r: BinaryReader): Message {
     case 15:
       return { type: "CycleRoom", cycle: r.readBool() };
     default:
-      throw new Error("Message 标签不合法");
+      throw new Error("proto-message-tag-invalid");
   }
 }
 
@@ -474,7 +474,7 @@ export function decodeClientCommand(r: BinaryReader): ClientCommand {
     case 15:
       return { type: "Abort" };
     default:
-      throw new Error("ClientCommand 标签不合法");
+      throw new Error("proto-clientcommand-tag-invalid");
   }
 }
 
@@ -617,7 +617,7 @@ export function decodeServerCommand(r: BinaryReader): ServerCommand {
     case 19:
       return { type: "Abort", result: decodeStringResult(r, () => ({})) };
     default:
-      throw new Error("ServerCommand 标签不合法");
+      throw new Error("proto-servercommand-tag-invalid");
   }
 }
 

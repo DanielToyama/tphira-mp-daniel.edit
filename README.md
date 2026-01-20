@@ -67,6 +67,7 @@ docker run --rm -p 12346:12346 -p 12347:12347 ^
 - HTTP_SERVICE(boolean): 是否启动 HTTP 服务（默认 `false`）
 - HTTP_PORT(number): HTTP 服务监听端口（默认 `12347`）
 - ROOM_MAX_USERS(number): 单房间最大玩家数（默认 `8`，最大 `64`）
+- PHIRA_MP_LANG(string): 服务器端默认语言（默认 `zh-CN`）
 
 ## 🔨 安装与构建
 

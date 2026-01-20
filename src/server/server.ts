@@ -14,6 +14,7 @@ import { Logger } from "./logger.js";
 import { getAppPaths } from "./appPaths.js";
 import { readAppVersion } from "./version.js";
 import { startHttpService, type HttpService } from "./httpService.js";
+import { tl } from "./l10n.js";
 
 export type StartServerOptions = { host?: string; port?: number; config?: ServerConfig };
 
@@ -96,7 +97,10 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
 
   const server = net.createServer(async (socket) => {
     const id = newUuid();
-    logger.mark(`收到新连接，连接ID：${id}，来源：${socket.remoteAddress ?? "unknown"}:${socket.remotePort ?? "unknown"}`);
+    logger.mark(tl(state.serverLang, "log-new-connection", {
+      id,
+      remote: `${socket.remoteAddress ?? "unknown"}:${socket.remotePort ?? "unknown"}`
+    }));
     const session = new Session({ id, socket, state });
 
     try {
@@ -112,10 +116,19 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
 
       session.bindStream(stream);
       state.sessions.set(id, session);
-      logger.mark(`连接握手完成，连接ID：${id}，协议版本：“${stream.version}”`);
+      logger.mark(tl(state.serverLang, "log-handshake-ok", { id, version: String(stream.version) }));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      logger.warn(`连接握手失败，连接ID：${id}：${msg}`);
+      const reason = (() => {
+        const m = /^net-unsupported-protocol-version:(\d+)$/.exec(msg);
+        if (m) return tl(state.serverLang, "net-unsupported-protocol-version", { version: m[1]! });
+        try {
+          return state.serverLang.format(msg);
+        } catch {
+          return msg;
+        }
+      })();
+      logger.warn(tl(state.serverLang, "log-handshake-failed", { id, reason }));
       socket.destroy();
     }
   });
@@ -128,14 +141,17 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
   const httpService = cfg.http_service === true ? await startHttpService({ state, host: listenHost, port: cfg.http_port ?? 12347 }) : null;
 
   const addr = server.address() as net.AddressInfo;
-  logger.mark(`服务端版本 ${version}`);
-  logger.mark(`当前运行环境 ${process.platform}_${process.arch} node${formatNodeVersion(process.version)}`);
-  logger.mark(`服务端运行在 ${formatListenHostPort(addr.address, addr.port)}`);
+  logger.mark(tl(state.serverLang, "log-server-version", { version }));
+  logger.mark(tl(state.serverLang, "log-runtime-env", {
+    platform: `${process.platform}_${process.arch}`,
+    node: formatNodeVersion(process.version)
+  }));
+  logger.mark(tl(state.serverLang, "log-server-listen", { addr: formatListenHostPort(addr.address, addr.port) }));
   if (httpService) {
     const httpAddr = httpService.address();
-    logger.mark(`HTTP 服务运行在 ${formatListenHostPort(httpAddr.address, httpAddr.port)}`);
+    logger.mark(tl(state.serverLang, "log-http-listen", { addr: formatListenHostPort(httpAddr.address, httpAddr.port) }));
   }
-  logger.mark(`服务器名称 ${serverName}`);
+  logger.mark(tl(state.serverLang, "log-server-name", { name: serverName }));
 
   return {
     server,
@@ -152,7 +168,7 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
             else resolve();
           });
         });
-        logger.mark("服务端已停止");
+        logger.mark(tl(state.serverLang, "log-server-stopped"));
       } finally {
         logger.close();
       }

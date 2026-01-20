@@ -62,7 +62,7 @@ export class Stream<S, R> {
         opts.socket.off("data", onData);
 
         if (buf.length === 0) {
-          reject(new Error("连接已关闭"));
+          reject(new Error("net-connection-closed"));
           return;
         }
 
@@ -80,7 +80,7 @@ export class Stream<S, R> {
       const onClose = () => {
         opts.socket.off("data", onData);
         opts.socket.off("error", onError);
-        reject(new Error("连接已关闭"));
+        reject(new Error("net-connection-closed"));
       };
 
       opts.socket.on("data", onData);
@@ -90,7 +90,7 @@ export class Stream<S, R> {
 
     if (opts.versionToSend === undefined && opts.expectedVersion !== undefined && version !== (opts.expectedVersion & 0xff)) {
       opts.socket.destroy();
-      throw new Error(`不支持的协议版本：${version}`);
+      throw new Error(`net-unsupported-protocol-version:${version}`);
     }
 
     const stream = new Stream<S, R>(opts.socket, version, opts.codec, opts.handler, opts.fastPath);
@@ -123,7 +123,7 @@ export class Stream<S, R> {
       const timer = setTimeout(() => {
         if (done) return;
         done = true;
-        reject(new Error("send timeout"));
+        reject(new Error("net-send-timeout"));
       }, SEND_TIMEOUT_MS);
       this.socket.write(Buffer.concat([header, body]), (err) => {
         if (done) return;

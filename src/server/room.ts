@@ -1,6 +1,6 @@
 import type { ClientRoomState, Message, RoomState, ServerCommand } from "../common/commands.js";
 import type { RoomId } from "../common/roomId.js";
-import { tl } from "./l10n.js";
+import { tl, type Language } from "./l10n.js";
 import type { Chart, RecordData } from "./types.js";
 import type { User } from "./user.js";
 import type { Logger } from "./logger.js";
@@ -44,7 +44,7 @@ export class Room {
   }
 
   checkHost(user: User): void {
-    if (this.hostId !== user.id) throw new Error("only host can do this");
+    if (this.hostId !== user.id) throw new Error(tl(user.lang, "room-only-host"));
   }
 
   clientRoomState(): RoomState {
@@ -115,6 +115,7 @@ export class Room {
     broadcast: (cmd: ServerCommand) => Promise<void>;
     broadcastToMonitors: (cmd: ServerCommand) => Promise<void>;
     pickRandomUserId: (ids: number[]) => number | null;
+    lang: Language;
     logger?: Logger;
   }): Promise<boolean> {
     const { user } = opts;
@@ -130,7 +131,7 @@ export class Room {
       const newHost = opts.pickRandomUserId(users);
       if (newHost === null) return true;
       this.hostId = newHost;
-      opts.logger?.info(`房间 “${this.id}” 房主变更（离线）：${user.id} -> ${newHost}`);
+      opts.logger?.info(tl(opts.lang, "log-room-host-changed-offline", { room: this.id, old: String(user.id), next: String(newHost) }));
       await this.send(opts.broadcast, { type: "NewHost", user: newHost });
       const newHostUser = opts.usersById(newHost);
       if (newHostUser) await newHostUser.trySend({ type: "ChangeHost", is_host: true });
@@ -153,6 +154,7 @@ export class Room {
     broadcast: (cmd: ServerCommand) => Promise<void>;
     broadcastToMonitors: (cmd: ServerCommand) => Promise<void>;
     pickRandomUserId: (ids: number[]) => number | null;
+    lang: Language;
     logger?: Logger;
   }): Promise<void> {
     if (this.state.type === "WaitForReady") {
@@ -163,8 +165,11 @@ export class Room {
 
       const users = this.userIds();
       const monitors = this.monitorIds();
-      const monitorsText = monitors.length > 0 ? `，观战者：${monitors.join("、")}` : "";
-      opts.logger?.info(`房间 “${this.id}” 对局开始，玩家：${users.join("、")}${monitorsText}`);
+      const sep = opts.lang.lang === "zh-CN" ? "、" : ", ";
+      const usersText = users.join(sep);
+      const monitorsText = monitors.join(sep);
+      const monitorsSuffix = monitors.length > 0 ? tl(opts.lang, "log-room-game-start-monitors", { monitors: monitorsText }) : "";
+      opts.logger?.info(tl(opts.lang, "log-room-game-start", { room: this.id, users: usersText, monitorsSuffix }));
       await this.send(opts.broadcast, { type: "StartPlaying" });
       this.resetGameTime(opts.usersById);
       this.state = { type: "Playing", results: new Map(), aborted: new Set() };
@@ -190,14 +195,26 @@ export class Room {
         const bestAccIds = entries.filter(([, r]) => r.accuracy === bestAcc).map(([id]) => id);
         const bestAccName = opts.usersById(bestAccIds[0]!)?.name ?? String(bestAccIds[0]!);
 
-        const scoreText = `最高分：“${bestScoreName}”(${bestScoreIds[0]}) ${bestScore}`;
-        const accText = `最高准度：“${bestAccName}”(${bestAccIds[0]}) ${(bestAcc * 100).toFixed(2)}%`;
-        const summary = `本局结算：\n${scoreText}\n${accText}`;
+        const scoreText = tl(opts.lang, "chat-game-summary-score", {
+          name: bestScoreName,
+          id: String(bestScoreIds[0]!),
+          score: String(bestScore)
+        });
+        const accText = tl(opts.lang, "chat-game-summary-acc", {
+          name: bestAccName,
+          id: String(bestAccIds[0]!),
+          acc: `${(bestAcc * 100).toFixed(2)}%`
+        });
+        const summary = tl(opts.lang, "chat-game-summary", { scoreText, accText });
 
         await this.send(opts.broadcast, { type: "Chat", user: 0, content: summary });
       }
 
-      opts.logger?.info(`房间 “${this.id}” 对局结束（已上传：${results.size}，中止：${aborted.size}）`);
+      opts.logger?.info(tl(opts.lang, "log-room-game-end", {
+        room: this.id,
+        uploaded: String(results.size),
+        aborted: String(aborted.size)
+      }));
       await this.send(opts.broadcast, { type: "GameEnd" });
       this.state = { type: "SelectChart" };
 
@@ -208,7 +225,7 @@ export class Room {
           const newHost = users[(index + 1) % users.length]!;
           const oldHost = this.hostId;
           this.hostId = newHost;
-          opts.logger?.info(`房间 “${this.id}” 房主变更（轮转）：${oldHost} -> ${newHost}`);
+          opts.logger?.info(tl(opts.lang, "log-room-host-changed-cycle", { room: this.id, old: String(oldHost), next: String(newHost) }));
           await this.send(opts.broadcast, { type: "NewHost", user: newHost });
           const oldHostUser = opts.usersById(oldHost);
           if (oldHostUser) await oldHostUser.trySend({ type: "ChangeHost", is_host: false });
@@ -230,16 +247,16 @@ export class Room {
   validateStart(user: User): void {
     this.checkHost(user);
     if (!this.chart) throw new Error(tl(user.lang, "start-no-chart-selected"));
-    if (this.state.type !== "SelectChart") throw new Error("invalid state");
+    if (this.state.type !== "SelectChart") throw new Error(tl(user.lang, "room-invalid-state"));
   }
 
   validateSelectChart(user: User): void {
     this.checkHost(user);
-    if (this.state.type !== "SelectChart") throw new Error("invalid state");
+    if (this.state.type !== "SelectChart") throw new Error(tl(user.lang, "room-invalid-state"));
   }
 
   requireRoom(user: User): Room {
-    if (!user.room) throw new Error("no room");
+    if (!user.room) throw new Error(tl(user.lang, "room-no-room"));
     return user.room;
   }
 

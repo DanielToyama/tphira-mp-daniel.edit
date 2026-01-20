@@ -2,7 +2,7 @@ import { f16BitsToF32, f32ToF16Bits } from "./half.js";
 import { u64PairToUuid, uuidToU64Pair } from "./uuid.js";
 
 function ensureAvailable(buffer: Buffer, offset: number, need: number): void {
-  if (offset + need > buffer.length) throw new Error("意外的 EOF");
+  if (offset + need > buffer.length) throw new Error("binary-unexpected-eof");
 }
 
 export class BinaryReader {
@@ -89,7 +89,7 @@ export class BinaryReader {
 
   readUlebNumber(): number {
     const v = this.readUlebBigInt();
-    if (v > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("长度过大");
+    if (v > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("binary-length-too-large");
     return Number(v);
   }
 
@@ -100,7 +100,7 @@ export class BinaryReader {
 
   readVarchar(maxLen: number): string {
     const len = this.readUlebNumber();
-    if (len > maxLen) throw new Error("字符串过长");
+    if (len > maxLen) throw new Error("binary-string-too-long");
     return this.take(len).toString("utf8");
   }
 
@@ -225,7 +225,7 @@ export class BinaryWriter {
 
   writeVarchar(maxLen: number, s: string): void {
     const buf = Buffer.from(s, "utf8");
-    if (buf.length > maxLen) throw new Error("字符串过长");
+    if (buf.length > maxLen) throw new Error("binary-string-too-long");
     this.writeUleb(buf.length);
     this.chunks.push(buf);
   }

@@ -254,7 +254,7 @@ export class Client {
   }
 
   private async send(cmd: ClientCommand): Promise<void> {
-    if (!this.stream) throw new Error("未连接");
+    if (!this.stream) throw new Error("client-not-connected");
     await this.stream.send(cmd);
   }
 
@@ -276,11 +276,11 @@ export class Client {
   }
 
   private async waitPong(timeoutMs: number): Promise<void> {
-    if (this.pongWaiter) throw new Error("上一次 ping 尚未完成");
+    if (this.pongWaiter) throw new Error("client-ping-in-flight");
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pongWaiter = null;
-        reject(new Error("heartbeat timeout"));
+        reject(new Error("client-heartbeat-timeout"));
       }, timeoutMs);
 
       this.pongWaiter = {
@@ -343,7 +343,7 @@ export class Client {
       reject: (_: Error) => {},
       timer: setTimeout(() => {
         onTimeout();
-        pending.reject(new Error("timeout"));
+        pending.reject(new Error("client-timeout"));
       }, timeoutMs)
     };
     return pending;

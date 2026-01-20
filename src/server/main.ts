@@ -1,5 +1,6 @@
 import { parseArgs } from "node:util";
 import { startServer } from "./server.js";
+import { Language, tl } from "./l10n.js";
 
 function parsePort(argv: string[]): number | undefined {
   const { values } = parseArgs({
@@ -16,7 +17,8 @@ function parsePort(argv: string[]): number | undefined {
   if (values.port === undefined) return undefined;
   const port = Number(values.port);
   if (!Number.isInteger(port) || port <= 0 || port > 65535) {
-    throw new Error("端口号不合法");
+    const lang = new Language(process.env.PHIRA_MP_LANG?.trim() || process.env.LANG?.trim() || "");
+    throw new Error(tl(lang, "cli-invalid-port"));
   }
   return port;
 }

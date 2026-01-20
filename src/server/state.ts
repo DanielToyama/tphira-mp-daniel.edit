@@ -5,12 +5,14 @@ import type { Room } from "./room.js";
 import type { Session } from "./session.js";
 import type { User } from "./user.js";
 import type { Logger } from "./logger.js";
+import { Language } from "./l10n.js";
 
 export class ServerState {
   readonly mutex = new Mutex();
   readonly config: ServerConfig;
   readonly logger: Logger;
   readonly serverName: string;
+  readonly serverLang: Language;
 
   readonly sessions = new Map<string, Session>();
   readonly users = new Map<number, User>();
@@ -20,5 +22,6 @@ export class ServerState {
     this.config = config;
     this.logger = logger;
     this.serverName = serverName;
+    this.serverLang = new Language(process.env.PHIRA_MP_LANG?.trim() || process.env.LANG?.trim() || "");
   }
 }
