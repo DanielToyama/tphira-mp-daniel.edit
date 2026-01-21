@@ -424,6 +424,38 @@ describe("端到端（mock 远端 HTTP）", () => {
     }
   });
 
+  test("管理员接口按 IP 错误次数封禁（5 次）", async () => {
+    const prev = process.env.ADMIN_TOKEN;
+    process.env.ADMIN_TOKEN = "test-token";
+
+    const running = await startServer({ port: 0, config: { monitors: [200], http_service: true, http_port: 0 } });
+    const httpPort = running.http!.address().port;
+
+    try {
+      for (let i = 0; i < 4; i++) {
+        const r = await originalFetch(`http://127.0.0.1:${httpPort}/admin/rooms`, {
+          headers: { "x-admin-token": "wrong-token" }
+        });
+        expect(r.status).toBe(401);
+      }
+
+      const banned = await originalFetch(`http://127.0.0.1:${httpPort}/admin/rooms`, {
+        headers: { "x-admin-token": "wrong-token" }
+      });
+      expect(banned.status).toBe(401);
+      expect(await banned.json()).toMatchObject({ ok: false, error: "unauthorized" });
+
+      const stillBanned = await originalFetch(`http://127.0.0.1:${httpPort}/admin/rooms`, {
+        headers: { "x-admin-token": "test-token" }
+      });
+      expect(stillBanned.status).toBe(401);
+      expect(await stillBanned.json()).toMatchObject({ ok: false, error: "unauthorized" });
+    } finally {
+      process.env.ADMIN_TOKEN = prev;
+      await running.close();
+    }
+  });
+
   test("管理员封禁持久化：重启后仍生效", async () => {
     const prevToken = process.env.ADMIN_TOKEN;
     const prevPath = process.env.ADMIN_DATA_PATH;

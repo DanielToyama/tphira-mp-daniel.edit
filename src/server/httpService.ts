@@ -14,10 +14,20 @@ export type HttpService = {
 export async function startHttpService(opts: { state: ServerState; host: string; port: number }): Promise<HttpService> {
   const { state } = opts;
 
+  const ADMIN_MAX_FAILED_ATTEMPTS_PER_IP = 5;
+  const adminFailedAttemptsByIp = new Map<string, number>();
+  const adminBannedIps = new Set<string>();
+
   const server = http.createServer((req, res) => {
     void (async () => {
       const lang = req.headers["accept-language"] ? new Language(String(req.headers["accept-language"])) : state.serverLang;
       const url = new URL(req.url ?? "/", "http://localhost");
+      const getClientIp = (): string => {
+        const xff = typeof req.headers["x-forwarded-for"] === "string" ? req.headers["x-forwarded-for"] : "";
+        const first = xff ? xff.split(",")[0]?.trim() : "";
+        const raw = first || req.socket.remoteAddress || "";
+        return raw.startsWith("::ffff:") ? raw.slice("::ffff:".length) : raw;
+      };
       const applyCors = () => {
         const reqHeaders = typeof req.headers["access-control-request-headers"] === "string" ? req.headers["access-control-request-headers"] : "";
         res.setHeader("access-control-allow-origin", "*");
@@ -61,14 +71,25 @@ export async function startHttpService(opts: { state: ServerState; host: string;
         (typeof req.headers.authorization === "string" ? extractBearer(req.headers.authorization) : "") ||
         (url.searchParams.get("token") ?? "");
       const requireAdmin = () => {
+        const ip = getClientIp();
+        if (adminBannedIps.has(ip)) {
+          writeJson(401, { ok: false, error: "unauthorized" });
+          return false;
+        }
         if (!adminToken) {
           writeJson(403, { ok: false, error: "admin-disabled" });
           return false;
         }
         if (!reqAdminToken || reqAdminToken !== adminToken) {
+          const next = (adminFailedAttemptsByIp.get(ip) ?? 0) + 1;
+          adminFailedAttemptsByIp.set(ip, next);
+          if (next >= ADMIN_MAX_FAILED_ATTEMPTS_PER_IP) {
+            adminBannedIps.add(ip);
+          }
           writeJson(401, { ok: false, error: "unauthorized" });
           return false;
         }
+        adminFailedAttemptsByIp.delete(ip);
         return true;
       };
 
