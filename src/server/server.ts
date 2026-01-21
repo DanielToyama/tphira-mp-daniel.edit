@@ -52,7 +52,7 @@ function parseRoomMaxUsersEnv(value: string | undefined): number | undefined {
 function parseMonitorsEnv(value: string | undefined): number[] | undefined {
   if (!value) return undefined;
   const ids = value
-    .split(",")
+    .split(/[,\s;，]+/g)
     .map((it) => Number(it.trim()))
     .filter((it) => Number.isInteger(it));
   if (ids.length === 0) return undefined;
@@ -111,7 +111,17 @@ function loadConfig(): ServerConfig {
     };
 
     const monitorsRaw = read<unknown>(["monitors", "MONITORS"]);
-    const monitors = Array.isArray(monitorsRaw) ? monitorsRaw.map((it) => Number(it)).filter((it) => Number.isInteger(it)) : [2];
+    const monitorsFromArray = Array.isArray(monitorsRaw) ? monitorsRaw.map((it) => Number(it)).filter((it) => Number.isInteger(it)) : null;
+    const monitorsFromString = typeof monitorsRaw === "string" ? (parseMonitorsEnv(monitorsRaw) ?? null) : null;
+    const monitorsFromNumber = typeof monitorsRaw === "number" && Number.isInteger(monitorsRaw) ? [monitorsRaw] : null;
+    const monitors =
+      monitorsFromArray && monitorsFromArray.length > 0
+        ? monitorsFromArray
+        : monitorsFromString && monitorsFromString.length > 0
+          ? monitorsFromString
+          : monitorsFromNumber && monitorsFromNumber.length > 0
+            ? monitorsFromNumber
+            : [2];
 
     const serverNameRaw = read<unknown>(["server_name", "SERVER_NAME"]);
     const server_name = typeof serverNameRaw === "string" && serverNameRaw.trim().length > 0 ? serverNameRaw.trim() : undefined;

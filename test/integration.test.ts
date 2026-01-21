@@ -284,6 +284,29 @@ describe("端到端（mock 远端 HTTP）", () => {
     }
   });
 
+  test("MONITORS 环境变量生效：观战用户可加入", async () => {
+    const prev = process.env.MONITORS;
+    process.env.MONITORS = "200";
+
+    const running = await startServer({ port: 0, config: {} });
+    const port = running.address().port;
+
+    const alice = await Client.connect("127.0.0.1", port);
+    const bob = await Client.connect("127.0.0.1", port);
+
+    try {
+      await alice.authenticate("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+      await bob.authenticate("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+      await alice.createRoom("room1");
+      await expect(bob.joinRoom("room1", true)).resolves.toBeTruthy();
+    } finally {
+      process.env.MONITORS = prev;
+      await alice.close();
+      await bob.close();
+      await running.close();
+    }
+  });
+
   test("管理员 API：鉴权、封禁用户/房间", async () => {
     const prev = process.env.ADMIN_TOKEN;
     const prevPath = process.env.ADMIN_DATA_PATH;

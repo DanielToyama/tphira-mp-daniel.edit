@@ -28,9 +28,9 @@ else
       if [ -n "${MONITORS:-}" ]; then
         printf "monitors:\n"
         old_ifs="${IFS}"
-        IFS=","
+        IFS=",; "
         for m in $MONITORS; do
-          m2="$(printf "%s" "$m" | tr -d " \t\r\n")"
+          m2="$(printf "%s" "$m" | tr -d "\t\r\n" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
           if [ -n "$m2" ]; then
             printf "  - %s\n" "$m2"
           fi
