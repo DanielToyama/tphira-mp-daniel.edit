@@ -69,6 +69,69 @@ token 错误/缺失：返回 `401 { "ok": false, "error": "unauthorized" }`
 }
 ```
 
+### 谱面回放接口（无需 ADMIN_TOKEN）
+
+回放相关接口需要启用 HTTP 服务（见上文“启用 HTTP 服务”），但**不需要** `ADMIN_TOKEN`。
+
+服务器会在对局开始时自动录制玩家上报的原始数据（touch frame、judgement event 等），并落盘到：
+
+`record/{用户ID}/{谱面ID}/{时间戳}.phirarec`
+
+并在每天 0 点清理超过 4 天的回放文件（按文件名时间戳判断）。
+
+#### 1) 认证并获取回放列表
+
+`POST /replay/auth`
+
+Body：
+
+```json
+{ "token": "your_user_token" }
+```
+
+返回示例：
+
+```json
+{
+  "ok": true,
+  "userId": 100,
+  "charts": [
+    {
+      "chartId": 1,
+      "replays": [
+        { "timestamp": 1730000000000, "recordId": 123 }
+      ]
+    }
+  ],
+  "sessionToken": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "expiresAt": 1730001800000
+}
+```
+
+- `token`：Phira 主站 token（与客户端 TCP 鉴权相同），服务端会用它去请求 `/me` 以确定用户身份。
+- `sessionToken`：临时 token，仅用于下载该用户自己的回放文件（默认 30 分钟有效）。
+
+#### 2) 下载回放文件（限速 50KB/s）
+
+`GET /replay/download?sessionToken=...&chartId=...&timestamp=...`
+
+成功：返回 `application/octet-stream` 的 `.phirarec` 文件。
+
+- `sessionToken`：来自 `/replay/auth`，仅允许下载该 token 绑定用户的回放
+- `chartId`：谱面 ID
+- `timestamp`：回放文件名中的时间戳（毫秒）
+- 限速：每个下载连接按 50KB/s 节流
+
+#### 回放文件格式（.phirarec）
+
+文件头固定 12 字节（小端）：
+
+- 4 字节：谱面 ID（UInt32LE）
+- 4 字节：用户 ID（UInt32LE）
+- 4 字节：成绩 ID（UInt32LE，若无成绩则为 0）
+
+后续为原生数据流（服务端收到的 Touches/Judges 等命令会按现有协议编码写入）。
+
 ## 管理员接口
 
 下面所有接口都需要 `ADMIN_TOKEN` 鉴权。

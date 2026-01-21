@@ -1,9 +1,14 @@
 import http from "node:http";
 import type net from "node:net";
+import { once } from "node:events";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
 import { parseRoomId, roomIdToString, type RoomId } from "../common/roomId.js";
+import { newUuid } from "../common/uuid.js";
 import type { ServerState } from "./state.js";
 import { Language, tl } from "./l10n.js";
 import type { ServerCommand } from "../common/commands.js";
+import { defaultReplayBaseDir, listReplaysForUser, readReplayHeader, replayFilePath } from "./replayStorage.js";
 
 export type HttpService = {
   server: http.Server;
@@ -17,6 +22,9 @@ export async function startHttpService(opts: { state: ServerState; host: string;
   const ADMIN_MAX_FAILED_ATTEMPTS_PER_IP = 5;
   const adminFailedAttemptsByIp = new Map<string, number>();
   const adminBannedIps = new Set<string>();
+
+  const REPLAY_SESSION_TTL_MS = 30 * 60 * 1000;
+  const replaySessions = new Map<string, { userId: number; expiresAt: number }>();
 
   const server = http.createServer((req, res) => {
     void (async () => {
@@ -59,6 +67,16 @@ export async function startHttpService(opts: { state: ServerState; host: string;
         const raw = Buffer.concat(chunks).toString("utf8").trim();
         if (!raw) return null;
         return JSON.parse(raw) as unknown;
+      };
+
+      const fetchWithTimeout = async (input: string | URL, init: RequestInit, timeoutMs: number): Promise<Response> => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          return await fetch(input, { ...init, signal: controller.signal });
+        } finally {
+          clearTimeout(timer);
+        }
       };
 
       const adminToken = state.config.admin_token?.trim() || "";
@@ -153,6 +171,102 @@ export async function startHttpService(opts: { state: ServerState; host: string;
         });
 
         writeJson(200, out);
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/replay/auth") {
+        const body = await readJson();
+        const token = typeof (body as any)?.token === "string" ? String((body as any).token).trim() : "";
+        if (!token) {
+          writeJson(400, { ok: false, error: "bad-token" });
+          return;
+        }
+
+        for (const [k, v] of replaySessions) {
+          if (Date.now() > v.expiresAt) replaySessions.delete(k);
+        }
+
+        const me = await fetchWithTimeout("https://phira.5wyxi.com/me", {
+          headers: { Authorization: `Bearer ${token}` }
+        }, 8000).then(async (r) => {
+          if (!r.ok) throw new Error("auth-failed");
+          return (await r.json()) as { id: number };
+        }).catch(() => null);
+
+        if (!me || !Number.isInteger(me.id)) {
+          writeJson(401, { ok: false, error: "unauthorized" });
+          return;
+        }
+
+        const baseDir = defaultReplayBaseDir();
+        const listed = await listReplaysForUser(baseDir, me.id);
+        const charts = [...listed.entries()].map(([chartId, replays]) => ({
+          chartId,
+          replays: replays.map((r) => ({ timestamp: r.timestamp, recordId: r.recordId }))
+        }));
+        charts.sort((a, b) => a.chartId - b.chartId);
+
+        const sessionToken = newUuid();
+        const expiresAt = Date.now() + REPLAY_SESSION_TTL_MS;
+        replaySessions.set(sessionToken, { userId: me.id, expiresAt });
+
+        writeJson(200, { ok: true, userId: me.id, charts, sessionToken, expiresAt });
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/replay/download") {
+        const sessionToken = (url.searchParams.get("sessionToken") ?? "").trim();
+        const chartId = Number(url.searchParams.get("chartId") ?? "");
+        const timestamp = Number(url.searchParams.get("timestamp") ?? "");
+        if (!sessionToken || !Number.isInteger(chartId) || !Number.isInteger(timestamp) || chartId < 0 || timestamp <= 0) {
+          writeJson(400, { ok: false, error: "bad-request" });
+          return;
+        }
+
+        for (const [k, v] of replaySessions) {
+          if (Date.now() > v.expiresAt) replaySessions.delete(k);
+        }
+
+        const sess = replaySessions.get(sessionToken);
+        if (!sess || Date.now() > sess.expiresAt) {
+          writeJson(401, { ok: false, error: "unauthorized" });
+          return;
+        }
+
+        const baseDir = defaultReplayBaseDir();
+        const filePath = replayFilePath(baseDir, sess.userId, chartId, timestamp);
+        const header = await readReplayHeader(filePath).catch(() => null);
+        if (!header || header.userId !== sess.userId || header.chartId !== chartId) {
+          writeJson(404, { ok: false, error: "not-found" });
+          return;
+        }
+
+        const info = await stat(filePath).catch(() => null);
+        if (!info || !info.isFile()) {
+          writeJson(404, { ok: false, error: "not-found" });
+          return;
+        }
+
+        res.statusCode = 200;
+        res.setHeader("content-type", "application/octet-stream");
+        res.setHeader("cache-control", "no-store");
+        res.setHeader("content-disposition", `attachment; filename="${timestamp}.phirarec"`);
+        res.setHeader("content-length", String(info.size));
+
+        const bytesPerSec = 50 * 1024;
+        const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+        const stream = createReadStream(filePath, { highWaterMark: 4096 });
+        try {
+          for await (const chunk of stream) {
+            if (!res.write(chunk)) await once(res, "drain");
+            const delayMs = Math.ceil((chunk.length / bytesPerSec) * 1000);
+            if (delayMs > 0) await sleep(delayMs);
+          }
+          res.end();
+        } catch {
+          stream.destroy();
+          res.end();
+        }
         return;
       }
 
@@ -496,6 +610,14 @@ export async function startHttpService(opts: { state: ServerState; host: string;
           state.logger.info(tl(state.serverLang, "log-room-game-start", { room: room.id, users: usersText, monitorsSuffix }));
           await room.send((c) => broadcastRoomAll(room.id, c), { type: "StartPlaying" });
           room.resetGameTime((id) => state.users.get(id));
+          room.live = true;
+          const fake = state.replayRecorder.fakeMonitorInfo();
+          await broadcastRoomAll(room.id, { type: "OnJoinRoom", info: fake });
+          await room.send((c) => broadcastRoomAll(room.id, c), { type: "JoinRoom", user: fake.id, name: fake.name });
+          setTimeout(() => {
+            void room.send((c) => broadcastRoomAll(room.id, c), { type: "LeaveRoom", user: fake.id, name: fake.name });
+          }, 200);
+          await state.replayRecorder.startRoom(room.id, room.chart!.id, room.userIds());
           room.state = { type: "Playing", results: new Map(), aborted: new Set() };
           await room.onStateChange((c) => broadcastRoomAll(room.id, c));
           writeJson(200, { ok: true });

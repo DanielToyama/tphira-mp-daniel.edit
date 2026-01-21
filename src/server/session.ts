@@ -329,7 +329,15 @@ export class Session {
         broadcastToMonitors: (cmd) => this.broadcastRoomMonitors(room, cmd),
         pickRandomUserId: (ids) => pickRandom(ids),
         lang: this.state.serverLang,
-        logger: this.state.logger
+        logger: this.state.logger,
+        onEnterPlaying: async (r) => {
+          if (!r.chart) return;
+          r.live = true;
+          await this.state.replayRecorder.startRoom(r.id, r.chart.id, r.userIds());
+        },
+        onGameEnd: async (r) => {
+          await this.state.replayRecorder.endRoom(r.id);
+        }
       });
       if (shouldDrop) {
         this.state.logger.info(tl(this.state.serverLang, "log-room-recycled", { room: room.id }));
@@ -358,7 +366,15 @@ export class Session {
           broadcastToMonitors: (cmd) => this.broadcastRoomMonitors(room2, cmd),
           pickRandomUserId: (ids) => pickRandom(ids),
           lang: this.state.serverLang,
-          logger: this.state.logger
+          logger: this.state.logger,
+          onEnterPlaying: async (r) => {
+            if (!r.chart) return;
+            r.live = true;
+            await this.state.replayRecorder.startRoom(r.id, r.chart.id, r.userIds());
+          },
+          onGameEnd: async (r) => {
+            await this.state.replayRecorder.endRoom(r.id);
+          }
         });
         if (shouldDrop) {
           this.state.logger.info(tl(this.state.serverLang, "log-room-recycled", { room: room2.id }));
@@ -394,6 +410,7 @@ export class Session {
         const last = cmd.frames.at(-1);
         if (last) user.gameTime = last.time;
         this.state.logger.info(tl(this.state.serverLang, "log-user-touches", { user: user.name, room: room.id, count: String(cmd.frames.length) }));
+        this.state.replayRecorder.appendTouches(room.id, user.id, cmd.frames);
         void this.broadcastRoomMonitors(room, { type: "Touches", player: user.id, frames: cmd.frames });
         return null;
       }
@@ -402,6 +419,7 @@ export class Session {
         if (!room) return null;
         if (!room.isLive()) return null;
         this.state.logger.info(tl(this.state.serverLang, "log-user-judges", { user: user.name, room: room.id, count: String(cmd.judges.length) }));
+        this.state.replayRecorder.appendJudges(room.id, user.id, cmd.judges);
         void this.broadcastRoomMonitors(room, { type: "Judges", player: user.id, judges: cmd.judges });
         return null;
       }
@@ -477,7 +495,21 @@ export class Session {
             pickRandomUserId: (ids) => pickRandom(ids),
             lang: this.state.serverLang,
             logger: this.state.logger,
-            disbandRoom: (r) => this.disbandRoom(r)
+            disbandRoom: (r) => this.disbandRoom(r),
+            onEnterPlaying: async (r) => {
+              if (!r.chart) return;
+              r.live = true;
+              const fake = this.state.replayRecorder.fakeMonitorInfo();
+              await this.broadcastRoom(r, { type: "OnJoinRoom", info: fake });
+              await r.send((c) => this.broadcastRoom(r, c), { type: "JoinRoom", user: fake.id, name: fake.name });
+              setTimeout(() => {
+                void r.send((c) => this.broadcastRoom(r, c), { type: "LeaveRoom", user: fake.id, name: fake.name });
+              }, 200);
+              await this.state.replayRecorder.startRoom(r.id, r.chart.id, r.userIds());
+            },
+            onGameEnd: async (r) => {
+              await this.state.replayRecorder.endRoom(r.id);
+            }
           });
           if (shouldDrop) {
             this.state.logger.info(tl(this.state.serverLang, "log-room-recycled", { room: room.id }));
@@ -532,7 +564,15 @@ export class Session {
             pickRandomUserId: (ids) => pickRandom(ids),
             lang: this.state.serverLang,
             logger: this.state.logger,
-            disbandRoom: (r) => this.disbandRoom(r)
+            disbandRoom: (r) => this.disbandRoom(r),
+            onEnterPlaying: async (r) => {
+              if (!r.chart) return;
+              r.live = true;
+              await this.state.replayRecorder.startRoom(r.id, r.chart.id, r.userIds());
+            },
+            onGameEnd: async (r) => {
+              await this.state.replayRecorder.endRoom(r.id);
+            }
           });
           return {};
         }) };
@@ -551,7 +591,21 @@ export class Session {
               pickRandomUserId: (ids) => pickRandom(ids),
               lang: this.state.serverLang,
               logger: this.state.logger,
-              disbandRoom: (r) => this.disbandRoom(r)
+              disbandRoom: (r) => this.disbandRoom(r),
+              onEnterPlaying: async (r) => {
+                if (!r.chart) return;
+                r.live = true;
+                const fake = this.state.replayRecorder.fakeMonitorInfo();
+                await this.broadcastRoom(r, { type: "OnJoinRoom", info: fake });
+                await r.send((c) => this.broadcastRoom(r, c), { type: "JoinRoom", user: fake.id, name: fake.name });
+                setTimeout(() => {
+                  void r.send((c) => this.broadcastRoom(r, c), { type: "LeaveRoom", user: fake.id, name: fake.name });
+                }, 200);
+                await this.state.replayRecorder.startRoom(r.id, r.chart.id, r.userIds());
+              },
+              onGameEnd: async (r) => {
+                await this.state.replayRecorder.endRoom(r.id);
+              }
             });
           }
           return {};
@@ -590,6 +644,7 @@ export class Session {
             if (room.state.aborted.has(user.id)) throw new Error(user.lang.format("room-game-aborted"));
             if (room.state.results.has(user.id)) throw new Error(user.lang.format("record-already-uploaded"));
             room.state.results.set(user.id, record);
+            this.state.replayRecorder.setRecordId(room.id, user.id, record.id);
             await room.checkAllReady({
               usersById: (id) => this.state.users.get(id),
               broadcast: (c) => this.broadcastRoom(room, c),
@@ -597,7 +652,21 @@ export class Session {
               pickRandomUserId: (ids) => pickRandom(ids),
               lang: this.state.serverLang,
               logger: this.state.logger,
-              disbandRoom: (r) => this.disbandRoom(r)
+              disbandRoom: (r) => this.disbandRoom(r),
+              onEnterPlaying: async (r) => {
+                if (!r.chart) return;
+                r.live = true;
+                const fake = this.state.replayRecorder.fakeMonitorInfo();
+                await this.broadcastRoom(r, { type: "OnJoinRoom", info: fake });
+                await r.send((c) => this.broadcastRoom(r, c), { type: "JoinRoom", user: fake.id, name: fake.name });
+                setTimeout(() => {
+                  void r.send((c) => this.broadcastRoom(r, c), { type: "LeaveRoom", user: fake.id, name: fake.name });
+                }, 200);
+                await this.state.replayRecorder.startRoom(r.id, r.chart.id, r.userIds());
+              },
+              onGameEnd: async (r) => {
+                await this.state.replayRecorder.endRoom(r.id);
+              }
             });
           }
           return {};
@@ -618,7 +687,21 @@ export class Session {
               pickRandomUserId: (ids) => pickRandom(ids),
               lang: this.state.serverLang,
               logger: this.state.logger,
-              disbandRoom: (r) => this.disbandRoom(r)
+              disbandRoom: (r) => this.disbandRoom(r),
+              onEnterPlaying: async (r) => {
+                if (!r.chart) return;
+                r.live = true;
+                const fake = this.state.replayRecorder.fakeMonitorInfo();
+                await this.broadcastRoom(r, { type: "OnJoinRoom", info: fake });
+                await r.send((c) => this.broadcastRoom(r, c), { type: "JoinRoom", user: fake.id, name: fake.name });
+                setTimeout(() => {
+                  void r.send((c) => this.broadcastRoom(r, c), { type: "LeaveRoom", user: fake.id, name: fake.name });
+                }, 200);
+                await this.state.replayRecorder.startRoom(r.id, r.chart.id, r.userIds());
+              },
+              onGameEnd: async (r) => {
+                await this.state.replayRecorder.endRoom(r.id);
+              }
             });
           }
           return {};
@@ -666,7 +749,21 @@ export class Session {
         broadcastToMonitors: (c) => this.broadcastRoomMonitors(room, c),
         pickRandomUserId: (arr) => pickRandom(arr),
         lang: this.state.serverLang,
-        logger: this.state.logger
+        logger: this.state.logger,
+        onEnterPlaying: async (r) => {
+          if (!r.chart) return;
+          r.live = true;
+          const fake = this.state.replayRecorder.fakeMonitorInfo();
+          await this.broadcastRoom(r, { type: "OnJoinRoom", info: fake });
+          await r.send((c) => this.broadcastRoom(r, c), { type: "JoinRoom", user: fake.id, name: fake.name });
+          setTimeout(() => {
+            void r.send((c) => this.broadcastRoom(r, c), { type: "LeaveRoom", user: fake.id, name: fake.name });
+          }, 200);
+          await this.state.replayRecorder.startRoom(r.id, r.chart.id, r.userIds());
+        },
+        onGameEnd: async (r) => {
+          await this.state.replayRecorder.endRoom(r.id);
+        }
       });
     }
     await this.state.mutex.runExclusive(async () => {

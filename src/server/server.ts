@@ -15,6 +15,7 @@ import { getAppPaths } from "./appPaths.js";
 import { readAppVersion } from "./version.js";
 import { startHttpService, type HttpService } from "./httpService.js";
 import { tl } from "./l10n.js";
+import { startReplayCleanup } from "./replayCleanup.js";
 
 export type StartServerOptions = { host?: string; port?: number; config?: Partial<ServerConfig> };
 
@@ -191,6 +192,7 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
   const adminDataPath = mergedCfg.admin_data_path ?? paths.adminDataPath;
   const state = new ServerState(mergedCfg, logger, serverName, adminDataPath);
   await state.loadAdminData();
+  const replayCleanup = startReplayCleanup({ ttlDays: 4, logger });
 
   const version = readAppVersion();
   const listenHost = mergedCfg.host ?? "::";
@@ -271,6 +273,7 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
         });
         logger.mark(tl(state.serverLang, "log-server-stopped"));
       } finally {
+        replayCleanup.stop();
         logger.close();
       }
     }

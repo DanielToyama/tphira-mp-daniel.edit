@@ -119,6 +119,8 @@ export class Room {
     lang: Language;
     logger?: Logger;
     disbandRoom?: (room: Room) => Promise<void>;
+    onEnterPlaying?: (room: Room) => Promise<void> | void;
+    onGameEnd?: (room: Room) => Promise<void> | void;
   }): Promise<boolean> {
     const { user } = opts;
     await this.send(opts.broadcast, { type: "LeaveRoom", user: user.id, name: user.name });
@@ -159,6 +161,8 @@ export class Room {
     lang: Language;
     logger?: Logger;
     disbandRoom?: (room: Room) => Promise<void>;
+    onEnterPlaying?: (room: Room) => Promise<void> | void;
+    onGameEnd?: (room: Room) => Promise<void> | void;
   }): Promise<void> {
     if (this.state.type === "WaitForReady") {
       const started = this.state.started;
@@ -167,6 +171,8 @@ export class Room {
       if (!allReady) return;
 
       if (this.contest?.manualStart) return;
+
+      if (opts.onEnterPlaying) await opts.onEnterPlaying(this);
 
       const users = this.userIds();
       const monitors = this.monitorIds();
@@ -231,6 +237,7 @@ export class Room {
         aborted: String(aborted.size)
       }));
       await this.send(opts.broadcast, { type: "GameEnd" });
+      if (opts.onGameEnd) await opts.onGameEnd(this);
       this.state = { type: "SelectChart" };
 
       if (this.contest?.autoDisband && opts.disbandRoom) {

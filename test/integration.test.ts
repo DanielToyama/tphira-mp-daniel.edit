@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import net from "node:net";
-import { unlink } from "node:fs/promises";
+import { existsSync, readdirSync } from "node:fs";
+import { readdir, readFile, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "../src/client/client.js";
@@ -654,5 +655,82 @@ describe("端到端（mock 远端 HTTP）", () => {
       await running.close();
     }
   });
+
+  test("回放录制：落盘、列表、下载", async () => {
+    await rm(join(process.cwd(), "record"), { recursive: true, force: true });
+
+    const running = await startServer({ port: 0, config: { monitors: [200], http_service: true, http_port: 0 } });
+    const port = running.address().port;
+    const httpPort = running.http!.address().port;
+
+    const alice = await Client.connect("127.0.0.1", port);
+    const bob = await Client.connect("127.0.0.1", port);
+
+    try {
+      await alice.authenticate("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+      await bob.authenticate("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+
+      await alice.createRoom("room1");
+      await bob.joinRoom("room1", true);
+
+      await alice.selectChart(1);
+      await alice.requestStart();
+      await bob.ready();
+
+      await waitFor(() => alice.roomState()?.type === "Playing", 5000);
+
+      await alice.sendTouches([{ time: 1, points: [[0, { x: 0, y: 1 }]] }]);
+      await alice.sendJudges([{ time: 1, line_id: 1, note_id: 1, judgement: 0 } as any]);
+
+      await alice.played(1);
+      await waitFor(() => alice.roomState()?.type === "SelectChart", 5000);
+
+      const dir = join(process.cwd(), "record", "100", "1");
+      await waitFor(() => {
+        if (!existsSync(dir)) return false;
+        try {
+          return readdirSync(dir).some((f) => f.endsWith(".phirarec"));
+        } catch {
+          return false;
+        }
+      }, 5000);
+
+      const files = (await readdir(dir)).filter((f) => f.endsWith(".phirarec"));
+      expect(files.length).toBeGreaterThan(0);
+      const ts = Number(files[0]!.replace(/\.phirarec$/i, ""));
+      expect(Number.isInteger(ts)).toBe(true);
+
+      const filePath = join(dir, files[0]!);
+      const buf = await readFile(filePath);
+      expect(buf.readUInt32LE(0)).toBe(1);
+      expect(buf.readUInt32LE(4)).toBe(100);
+      expect(buf.readUInt32LE(8)).toBe(1);
+
+      const authRes = await originalFetch(`http://127.0.0.1:${httpPort}/replay/auth`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" })
+      }).then((r) => r.json() as any);
+      expect(authRes.ok).toBe(true);
+      expect(authRes.userId).toBe(100);
+      expect(Array.isArray(authRes.charts)).toBe(true);
+      const chart1 = authRes.charts.find((c: any) => c.chartId === 1);
+      expect(chart1).toBeTruthy();
+      const replay = (chart1.replays as any[]).find((r) => r.timestamp === ts && r.recordId === 1);
+      expect(replay).toBeTruthy();
+
+      const dl = await originalFetch(`http://127.0.0.1:${httpPort}/replay/download?sessionToken=${encodeURIComponent(authRes.sessionToken)}&chartId=1&timestamp=${ts}`);
+      expect(dl.status).toBe(200);
+      const dlBuf = Buffer.from(await dl.arrayBuffer());
+      expect(dlBuf.readUInt32LE(0)).toBe(1);
+      expect(dlBuf.readUInt32LE(4)).toBe(100);
+      expect(dlBuf.readUInt32LE(8)).toBe(1);
+    } finally {
+      await alice.close();
+      await bob.close();
+      await running.close();
+      await rm(join(process.cwd(), "record"), { recursive: true, force: true });
+    }
+  }, 30000);
 });
 

@@ -9,6 +9,8 @@ import type { Session } from "./session.js";
 import type { User } from "./user.js";
 import type { Logger } from "./logger.js";
 import { Language } from "./l10n.js";
+import { ReplayRecorder } from "./replayRecorder.js";
+import { defaultReplayBaseDir } from "./replayStorage.js";
 
 type AdminDataFile = { version: 1; bannedUsers: number[]; bannedRoomUsers: Record<string, number[]> };
 
@@ -28,12 +30,15 @@ export class ServerState {
   readonly bannedRoomUsers = new Map<RoomId, Set<number>>();
   readonly contestRooms = new Map<RoomId, { whitelist: Set<number> }>();
 
+  readonly replayRecorder: ReplayRecorder;
+
   constructor(config: ServerConfig, logger: Logger, serverName: string, adminDataPath: string) {
     this.config = config;
     this.logger = logger;
     this.serverName = serverName;
     this.serverLang = new Language(process.env.PHIRA_MP_LANG?.trim() || process.env.LANG?.trim() || "");
     this.adminDataPath = adminDataPath;
+    this.replayRecorder = new ReplayRecorder(defaultReplayBaseDir());
   }
 
   private snapshotAdminData(): AdminDataFile {
