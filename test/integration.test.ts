@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import net from "node:net";
+import { unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Client } from "../src/client/client.js";
 import { startServer } from "../src/server/server.js";
 import type { TouchFrame } from "../src/common/commands.js";
@@ -43,6 +46,9 @@ describe("端到端（mock 远端 HTTP）", () => {
         }
         if (token === "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb") {
           return new Response(JSON.stringify({ id: 200, name: "Bob", language: "zh-CN" }), { status: 200 });
+        }
+        if (token === "cccccccccccccccccccccccccccccccc") {
+          return new Response(JSON.stringify({ id: 300, name: "Carol", language: "zh-CN" }), { status: 200 });
         }
         return new Response("unauthorized", { status: 401 });
       }
@@ -277,6 +283,157 @@ describe("端到端（mock 远端 HTTP）", () => {
       await running.close();
     }
   });
+
+  test("管理员 API：鉴权、封禁用户/房间", async () => {
+    const prev = process.env.ADMIN_TOKEN;
+    const prevPath = process.env.ADMIN_DATA_PATH;
+    process.env.ADMIN_TOKEN = "test-token";
+    const dataPath = join(tmpdir(), `phira-mp-admin-data-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
+    process.env.ADMIN_DATA_PATH = dataPath;
+
+    const running = await startServer({ port: 0, config: { monitors: [200], http_service: true, http_port: 0 } });
+    const port = running.address().port;
+    const httpPort = running.http!.address().port;
+
+    const alice = await Client.connect("127.0.0.1", port);
+    try {
+      await alice.authenticate("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+
+      const noAuth = await originalFetch(`http://127.0.0.1:${httpPort}/admin/rooms`);
+      expect(noAuth.status).toBe(401);
+
+      const rooms = await originalFetch(`http://127.0.0.1:${httpPort}/admin/rooms`, {
+        headers: { "x-admin-token": "test-token" }
+      });
+      expect(rooms.ok).toBe(true);
+
+      const banUser = await originalFetch(`http://127.0.0.1:${httpPort}/admin/ban/user`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-admin-token": "test-token" },
+        body: JSON.stringify({ userId: 100, banned: true })
+      });
+      expect(banUser.ok).toBe(true);
+
+      const alice2 = await Client.connect("127.0.0.1", port);
+      await expect(alice2.authenticate("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).rejects.toThrow(/封禁|banned/i);
+      await alice2.close();
+
+      const banRoom = await originalFetch(`http://127.0.0.1:${httpPort}/admin/ban/room`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-admin-token": "test-token" },
+        body: JSON.stringify({ userId: 200, roomId: "room1", banned: true })
+      });
+      expect(banRoom.ok).toBe(true);
+    } finally {
+      process.env.ADMIN_TOKEN = prev;
+      process.env.ADMIN_DATA_PATH = prevPath;
+      await unlink(dataPath).catch(() => {});
+      await alice.close();
+      await running.close();
+    }
+  });
+
+  test("管理员封禁持久化：重启后仍生效", async () => {
+    const prevToken = process.env.ADMIN_TOKEN;
+    const prevPath = process.env.ADMIN_DATA_PATH;
+    process.env.ADMIN_TOKEN = "test-token";
+    const dataPath = join(tmpdir(), `phira-mp-admin-data-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
+    process.env.ADMIN_DATA_PATH = dataPath;
+
+    const running1 = await startServer({ port: 0, config: { monitors: [200], http_service: true, http_port: 0 } });
+    const port1 = running1.address().port;
+    const httpPort1 = running1.http!.address().port;
+    const alice1 = await Client.connect("127.0.0.1", port1);
+    try {
+      await alice1.authenticate("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+      const banUser = await originalFetch(`http://127.0.0.1:${httpPort1}/admin/ban/user`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-admin-token": "test-token" },
+        body: JSON.stringify({ userId: 100, banned: true })
+      });
+      expect(banUser.ok).toBe(true);
+    } finally {
+      await alice1.close();
+      await running1.close();
+    }
+
+    const running2 = await startServer({ port: 0, config: { monitors: [200] } });
+    const port2 = running2.address().port;
+    const alice2 = await Client.connect("127.0.0.1", port2);
+    try {
+      await expect(alice2.authenticate("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).rejects.toThrow(/封禁|banned/i);
+    } finally {
+      process.env.ADMIN_TOKEN = prevToken;
+      process.env.ADMIN_DATA_PATH = prevPath;
+      await unlink(dataPath).catch(() => {});
+      await alice2.close();
+      await running2.close();
+    }
+  });
+
+  test("比赛房间：白名单、手动开始、结算后解散", async () => {
+    const prev = process.env.ADMIN_TOKEN;
+    process.env.ADMIN_TOKEN = "test-token";
+
+    const running = await startServer({ port: 0, config: { monitors: [], http_service: true, http_port: 0 } });
+    const port = running.address().port;
+    const httpPort = running.http!.address().port;
+
+    const alice = await Client.connect("127.0.0.1", port);
+    const bob = await Client.connect("127.0.0.1", port);
+    const carol = await Client.connect("127.0.0.1", port);
+
+    try {
+      await alice.authenticate("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+      await bob.authenticate("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+      await carol.authenticate("cccccccccccccccccccccccccccccccc");
+
+      await alice.createRoom("room1");
+      await bob.joinRoom("room1", false);
+
+      const cfg = await originalFetch(`http://127.0.0.1:${httpPort}/admin/contest/rooms/room1/config`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-admin-token": "test-token" },
+        body: JSON.stringify({ enabled: true, whitelist: [100, 200] })
+      });
+      expect(cfg.ok).toBe(true);
+
+      await expect(carol.joinRoom("room1", false)).rejects.toThrow(/白名单|whitelist/i);
+
+      await alice.selectChart(1);
+      await alice.requestStart();
+      await bob.ready();
+
+      await waitFor(() => alice.roomState()?.type === "WaitingForReady");
+      await sleep(200);
+      expect(alice.roomState()?.type).toBe("WaitingForReady");
+
+      const start = await originalFetch(`http://127.0.0.1:${httpPort}/admin/contest/rooms/room1/start`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-admin-token": "test-token" },
+        body: JSON.stringify({})
+      });
+      expect(start.ok).toBe(true);
+
+      await waitFor(() => alice.roomState()?.type === "Playing");
+      await waitFor(() => bob.roomState()?.type === "Playing");
+
+      const frames: TouchFrame[] = [{ time: 1, points: [[0, { x: 0, y: 1 }]] }];
+      await alice.sendTouches(frames);
+
+      await alice.played(1);
+      await bob.abort();
+
+      await waitFor(() => alice.roomId() === null, 5000);
+      await waitFor(() => bob.roomId() === null, 5000);
+    } finally {
+      process.env.ADMIN_TOKEN = prev;
+      await alice.close();
+      await bob.close();
+      await carol.close();
+      await running.close();
+    }
+  }, 20000);
 
   test("ROOM_MAX_USERS 生效（最多 1 人）", async () => {
     const running = await startServer({ port: 0, config: { monitors: [200], room_max_users: 1 } });

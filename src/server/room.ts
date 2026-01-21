@@ -19,6 +19,7 @@ export class Room {
   live = false;
   locked = false;
   cycle = false;
+  contest: { whitelist: Set<number>; manualStart: boolean; autoDisband: boolean } | null = null;
 
   private users: number[] = [];
   private monitors: number[] = [];
@@ -117,6 +118,7 @@ export class Room {
     pickRandomUserId: (ids: number[]) => number | null;
     lang: Language;
     logger?: Logger;
+    disbandRoom?: (room: Room) => Promise<void>;
   }): Promise<boolean> {
     const { user } = opts;
     await this.send(opts.broadcast, { type: "LeaveRoom", user: user.id, name: user.name });
@@ -156,12 +158,15 @@ export class Room {
     pickRandomUserId: (ids: number[]) => number | null;
     lang: Language;
     logger?: Logger;
+    disbandRoom?: (room: Room) => Promise<void>;
   }): Promise<void> {
     if (this.state.type === "WaitForReady") {
       const started = this.state.started;
       const allIds = [...this.userIds(), ...this.monitorIds()];
       const allReady = allIds.every((id) => started.has(id));
       if (!allReady) return;
+
+      if (this.contest?.manualStart) return;
 
       const users = this.userIds();
       const monitors = this.monitorIds();
@@ -218,6 +223,24 @@ export class Room {
       await this.send(opts.broadcast, { type: "GameEnd" });
       this.state = { type: "SelectChart" };
 
+      if (this.contest?.autoDisband && opts.disbandRoom) {
+        const chartText = this.chart ? `${this.chart.id}:${this.chart.name}` : "null";
+        const rows = [...results.entries()]
+          .map(([id, r]) => {
+            const name = opts.usersById(id)?.name ?? String(id);
+            return { id, name, score: r.score, acc: r.accuracy, fc: r.full_combo, std: r.std, std_score: r.std_score };
+          })
+          .sort((a, b) => b.score - a.score);
+        opts.logger?.info(tl(opts.lang, "log-contest-game-results", {
+          room: this.id,
+          chart: chartText,
+          results: JSON.stringify(rows),
+          aborted: JSON.stringify([...aborted].sort((a, b) => a - b))
+        }));
+        await opts.disbandRoom(this);
+        return;
+      }
+
       if (this.isCycle()) {
         const users = this.userIds();
         if (users.length > 0) {
@@ -239,6 +262,7 @@ export class Room {
   }
 
   validateJoin(user: User, monitor: boolean): void {
+    if (this.contest && !this.contest.whitelist.has(user.id)) throw new Error(tl(user.lang, "room-not-whitelisted"));
     if (this.locked) throw new Error(tl(user.lang, "join-room-locked"));
     if (this.state.type !== "SelectChart") throw new Error(tl(user.lang, "join-game-ongoing"));
     if (monitor && !user.canMonitor()) throw new Error(tl(user.lang, "join-cant-monitor"));

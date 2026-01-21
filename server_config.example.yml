@@ -18,3 +18,9 @@ monitors:
 # 服务器名称（欢迎信息会使用）
 server_name: Phira MP
 
+# 管理员接口鉴权 token（HTTP /admin/*）
+# ADMIN_TOKEN: "replace_me"
+
+# 管理员数据持久化路径（JSON）
+# ADMIN_DATA_PATH: "./admin_data.json"
+

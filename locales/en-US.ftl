@@ -40,10 +40,13 @@ auth-fetch-me-failed = Failed to fetch user info
 auth-account-already-online = Account is already online. Duplicate connection blocked.
 auth-failed = Authentication failed
 auth-repeated-authenticate = Repeated authenticate
+auth-banned = You are banned from this server
 
 room-already-in-room = Already in a room
 room-not-found = Room not found
 room-no-room = Not in a room
+room-banned = You are banned from room { $id }
+room-not-whitelisted = You are not whitelisted for this room
 room-only-host = Only the host can do this
 room-invalid-state = Invalid room state
 room-already-ready = Already ready
@@ -137,4 +140,5 @@ log-room-host-changed-offline = Room "{ $room }" host changed (offline): { $old 
 log-room-game-start = Room "{ $room }" game start. users: { $users }{ $monitorsSuffix }
 log-room-game-start-monitors = , monitors: { $monitors }
 log-room-game-end = Room "{ $room }" game end (uploaded={ $uploaded }, aborted={ $aborted })
+log-contest-game-results = Contest room "{ $room }" results: chart={ $chart } results={ $results } aborted={ $aborted }
 log-room-host-changed-cycle = Room "{ $room }" host changed (cycle): { $old } -> { $next }

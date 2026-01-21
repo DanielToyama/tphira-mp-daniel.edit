@@ -6,6 +6,8 @@ export type ServerConfig = {
   http_service?: boolean;
   http_port?: number;
   room_max_users?: number;
+  admin_token?: string;
+  admin_data_path?: string;
 };
 
 export type Chart = {

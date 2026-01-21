@@ -95,6 +95,7 @@ export class Session {
   private waitingForAuthenticate = true;
   private panicked = false;
   private lost = false;
+  private preserveRoomOnLost = false;
 
   private lastRecv = Date.now();
   private heartbeatTimer: NodeJS.Timeout;
@@ -178,6 +179,9 @@ export class Session {
         if (!r.ok) throw new Error("auth-fetch-me-failed");
         return (await r.json()) as { id: number; name: string; language: string };
       });
+
+      const banned = await this.state.mutex.runExclusive(async () => this.state.bannedUsers.has(me.id));
+      if (banned) throw new Error("auth-banned");
 
       let isReconnect = false;
       const user = await this.state.mutex.runExclusive(async () => {
@@ -290,7 +294,12 @@ export class Session {
     const who = user ? tl(this.state.serverLang, "log-disconnect-user", { user: user.name }) : "";
     this.state.logger.mark(tl(this.state.serverLang, "log-disconnect", { id: this.id, who }));
 
-    if (user) await this.dangleUser(user);
+    if (user && !this.preserveRoomOnLost) await this.dangleUser(user);
+  }
+
+  async adminDisconnect(opts: { preserveRoom: boolean }): Promise<void> {
+    if (opts.preserveRoom) this.preserveRoomOnLost = true;
+    await this.markLost();
   }
 
   private async dangleUser(user: User): Promise<void> {
@@ -405,6 +414,12 @@ export class Session {
         return { type: "JoinRoom", result: await errToStr(async () => {
           if (user.room) throw new Error(user.lang.format("room-already-in-room"));
 
+          const bannedInRoom = await this.state.mutex.runExclusive(async () => {
+            const set = this.state.bannedRoomUsers.get(cmd.id);
+            return set ? set.has(user.id) : false;
+          });
+          if (bannedInRoom) throw new Error(user.lang.format("room-banned", { id: String(cmd.id) }));
+
           const room = await this.state.mutex.runExclusive(async () => this.state.rooms.get(cmd.id) ?? null);
           if (!room) throw new Error(user.lang.format("room-not-found"));
 
@@ -448,7 +463,8 @@ export class Session {
             broadcastToMonitors: (c) => this.broadcastRoomMonitors(room, c),
             pickRandomUserId: (ids) => pickRandom(ids),
             lang: this.state.serverLang,
-            logger: this.state.logger
+            logger: this.state.logger,
+            disbandRoom: (r) => this.disbandRoom(r)
           });
           if (shouldDrop) {
             this.state.logger.info(tl(this.state.serverLang, "log-room-recycled", { room: room.id }));
@@ -502,7 +518,8 @@ export class Session {
             broadcastToMonitors: (c) => this.broadcastRoomMonitors(room, c),
             pickRandomUserId: (ids) => pickRandom(ids),
             lang: this.state.serverLang,
-            logger: this.state.logger
+            logger: this.state.logger,
+            disbandRoom: (r) => this.disbandRoom(r)
           });
           return {};
         }) };
@@ -520,7 +537,8 @@ export class Session {
               broadcastToMonitors: (c) => this.broadcastRoomMonitors(room, c),
               pickRandomUserId: (ids) => pickRandom(ids),
               lang: this.state.serverLang,
-              logger: this.state.logger
+              logger: this.state.logger,
+              disbandRoom: (r) => this.disbandRoom(r)
             });
           }
           return {};
@@ -565,7 +583,8 @@ export class Session {
               broadcastToMonitors: (c) => this.broadcastRoomMonitors(room, c),
               pickRandomUserId: (ids) => pickRandom(ids),
               lang: this.state.serverLang,
-              logger: this.state.logger
+              logger: this.state.logger,
+              disbandRoom: (r) => this.disbandRoom(r)
             });
           }
           return {};
@@ -585,7 +604,8 @@ export class Session {
               broadcastToMonitors: (c) => this.broadcastRoomMonitors(room, c),
               pickRandomUserId: (ids) => pickRandom(ids),
               lang: this.state.serverLang,
-              logger: this.state.logger
+              logger: this.state.logger,
+              disbandRoom: (r) => this.disbandRoom(r)
             });
           }
           return {};
@@ -618,6 +638,28 @@ export class Session {
       if (u) tasks.push(u.trySend(cmd));
     }
     await Promise.allSettled(tasks);
+  }
+
+  private async disbandRoom(room: Room): Promise<void> {
+    const ids = [...room.userIds(), ...room.monitorIds()];
+    for (const id of ids) {
+      const u = this.state.users.get(id);
+      if (!u) continue;
+      if (!u.room || u.room.id !== room.id) continue;
+      await room.onUserLeave({
+        user: u,
+        usersById: (uid) => this.state.users.get(uid),
+        broadcast: (c) => this.broadcastRoom(room, c),
+        broadcastToMonitors: (c) => this.broadcastRoomMonitors(room, c),
+        pickRandomUserId: (arr) => pickRandom(arr),
+        lang: this.state.serverLang,
+        logger: this.state.logger
+      });
+    }
+    await this.state.mutex.runExclusive(async () => {
+      this.state.rooms.delete(room.id);
+    });
+    this.state.logger.info(tl(this.state.serverLang, "log-room-recycled", { room: room.id }));
   }
 
   private async fetchChart(user: User, id: number): Promise<Chart> {

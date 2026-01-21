@@ -413,6 +413,7 @@ export class Client {
         if (this.roomValue) {
           if (cmd.message.type === "LockRoom") this.roomValue.locked = cmd.message.lock;
           if (cmd.message.type === "CycleRoom") this.roomValue.cycle = cmd.message.cycle;
+          if (cmd.message.type === "LeaveRoom" && this.meValue && cmd.message.user === this.meValue.id) this.roomValue = null;
         }
         return;
       case "ChangeState":

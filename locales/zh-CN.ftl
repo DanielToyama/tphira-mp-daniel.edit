@@ -40,10 +40,13 @@ auth-fetch-me-failed = 获取用户信息失败
 auth-account-already-online = 该账号已在线，已阻止重复连接
 auth-failed = 认证失败
 auth-repeated-authenticate = 重复认证
+auth-banned = 你已被封禁，无法进入服务器
 
 room-already-in-room = 已在房间中
 room-not-found = 房间不存在
 room-no-room = 你不在房间中
+room-banned = 你已被禁止进入房间 { $id }
+room-not-whitelisted = 你不在该房间白名单中
 room-only-host = 只有房主可以执行此操作
 room-invalid-state = 房间状态不允许此操作
 room-already-ready = 已准备
@@ -137,4 +140,5 @@ log-room-host-changed-offline = 房间 “{ $room }” 房主变更（离线）�
 log-room-game-start = 房间 “{ $room }” 对局开始，玩家：{ $users }{ $monitorsSuffix }
 log-room-game-start-monitors = ，观战者：{ $monitors }
 log-room-game-end = 房间 “{ $room }” 对局结束（已上传：{ $uploaded }，中止：{ $aborted }）
+log-contest-game-results = 比赛房间 “{ $room }” 成绩：chart={ $chart } results={ $results } aborted={ $aborted }
 log-room-host-changed-cycle = 房间 “{ $room }” 房主变更（轮转）：{ $old } -> { $next }
