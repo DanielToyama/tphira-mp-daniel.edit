@@ -274,6 +274,9 @@ export class Session {
     await this.sendSystemChat(lang.format("chat-separator"));
     await this.sendSystemChat(lang.format("chat-roomlist-title"));
     await this.sendSystemChat(await this.getAvailableRoomsText(lang));
+
+    const tip = this.state.config.room_list_tip?.trim();
+    if (tip) await this.sendSystemChat(tip);
   }
 
   private async markLost(): Promise<void> {

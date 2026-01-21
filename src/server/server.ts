@@ -69,6 +69,7 @@ function loadEnvConfig(): Partial<ServerConfig> {
   const room_max_users = parseRoomMaxUsersEnv(process.env.ROOM_MAX_USERS);
   const admin_token = process.env.ADMIN_TOKEN?.trim() || undefined;
   const admin_data_path = process.env.ADMIN_DATA_PATH?.trim() || undefined;
+  const room_list_tip = process.env.ROOM_LIST_TIP?.trim() || undefined;
 
   const out: Partial<ServerConfig> = {};
   if (monitors) out.monitors = monitors;
@@ -80,6 +81,7 @@ function loadEnvConfig(): Partial<ServerConfig> {
   if (room_max_users !== undefined) out.room_max_users = room_max_users;
   if (admin_token) out.admin_token = admin_token;
   if (admin_data_path) out.admin_data_path = admin_data_path;
+  if (room_list_tip) out.room_list_tip = room_list_tip;
   return out;
 }
 
@@ -93,7 +95,8 @@ function mergeConfig(base: ServerConfig, override: Partial<ServerConfig>): Serve
     http_port: override.http_port ?? base.http_port,
     room_max_users: override.room_max_users ?? base.room_max_users,
     admin_token: override.admin_token ?? base.admin_token,
-    admin_data_path: override.admin_data_path ?? base.admin_data_path
+    admin_data_path: override.admin_data_path ?? base.admin_data_path,
+    room_list_tip: override.room_list_tip ?? base.room_list_tip
   };
 }
 
@@ -150,7 +153,10 @@ function loadConfig(): ServerConfig {
     const adminDataPathRaw = read<unknown>(["admin_data_path", "ADMIN_DATA_PATH", "adminDataPath"]);
     const admin_data_path = typeof adminDataPathRaw === "string" && adminDataPathRaw.trim().length > 0 ? adminDataPathRaw.trim() : undefined;
 
-    return { monitors, server_name, host, port: safePort, http_service, http_port: safeHttpPort, room_max_users, admin_token, admin_data_path };
+    const roomListTipRaw = read<unknown>(["room_list_tip", "ROOM_LIST_TIP", "roomListTip"]);
+    const room_list_tip = typeof roomListTipRaw === "string" && roomListTipRaw.trim().length > 0 ? roomListTipRaw.trim() : undefined;
+
+    return { monitors, server_name, host, port: safePort, http_service, http_port: safeHttpPort, room_max_users, admin_token, admin_data_path, room_list_tip };
   } catch {
     return { monitors: [2] };
   }

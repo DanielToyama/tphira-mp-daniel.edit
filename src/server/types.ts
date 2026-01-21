@@ -8,6 +8,7 @@ export type ServerConfig = {
   room_max_users?: number;
   admin_token?: string;
   admin_data_path?: string;
+  room_list_tip?: string;
 };
 
 export type Chart = {

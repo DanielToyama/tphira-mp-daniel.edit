@@ -88,6 +88,9 @@ describe("端到端（mock 远端 HTTP）", () => {
   });
 
   test("创建房间→观战加入→准备→开始→触控转发→结算结束", async () => {
+    const prevTip = process.env.ROOM_LIST_TIP;
+    process.env.ROOM_LIST_TIP = "群：123456；查房间：example.com";
+
     const running = await startServer({ port: 0, config: { monitors: [200] } });
     const port = running.address().port;
 
@@ -106,12 +109,13 @@ describe("端到端（mock 远端 HTTP）", () => {
           .filter((m) => m.type === "Chat" && m.user === 0)
           .map((m) => (m as any).content as string);
         bobChat.push(...batch);
-        return bobChat.some((s) => s.includes("当前可用的房间如下："));
+        return bobChat.some((s) => s.includes("当前可用的房间如下：")) && bobChat.some((s) => s.includes("群：123456"));
       }, 2000);
 
       expect(bobChat.join("\n")).toContain("欲买桂花同载酒，荒泷天下第一斗。");
       expect(bobChat.join("\n")).toContain("当前可用的房间如下：");
       expect(bobChat.join("\n")).toContain("room1（1/8）");
+      expect(bobChat.join("\n")).toContain("群：123456；查房间：example.com");
       expect(hitokotoCalls).toBe(1);
 
       await bob.joinRoom("room1", true);
@@ -132,6 +136,7 @@ describe("端到端（mock 远端 HTTP）", () => {
       await alice.played(1);
       await waitFor(() => alice.roomState()?.type === "SelectChart");
     } finally {
+      process.env.ROOM_LIST_TIP = prevTip;
       await alice.close();
       await bob.close();
       await running.close();

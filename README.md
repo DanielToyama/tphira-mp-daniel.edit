@@ -61,6 +61,10 @@ docker run --rm -p 12346:12346 -p 12347:12347 ^
 - HTTP_PORT(number): HTTP 服务监听端口（默认 `12347`）
 - ROOM_MAX_USERS(number): 单房间最大玩家数（默认 `8`，最大 `64`）
 - PHIRA_MP_LANG(string): 服务端默认语言（默认 `zh-CN`）
+- ADMIN_TOKEN(string): 管理员接口鉴权 Token（默认 `replace_me`）
+- ADMIN_DATA_PATH(string): 管理员数据持久化路径（JSON）（默认 `./admin_data.json`）
+- ROOM_LIST_TIP(string): 登录后展示可用房间列表后追加的提示文案（可用于群宣传/查房间等，纯文本）（默认空）
+
 
 ## 🔨 安装与构建
 
@@ -137,13 +141,13 @@ pnpm run package:sea
 
 ## 🔭 本项目长期远景
 
-- [] 完善协议层，完整适配原版 Phira 客户端
-- [] 完善服务端，添加更多功能
-- [] 等待~~画饼~~添加
+- [ ] 完善协议层，完整适配原版 Phira 客户端
+- [ ] 完善服务端，添加更多功能
+- [ ] 等待~~画饼~~添加
 
 ## 🔧 管理员接口
 
-请参考 [此文档](Admin.md)
+请参考 [此文档](admin.md)
 
 ## 🙏 致谢
 
