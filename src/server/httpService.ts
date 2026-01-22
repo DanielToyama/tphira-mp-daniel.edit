@@ -327,6 +327,9 @@ export async function startHttpService(opts: { state: ServerState; host: string;
           const snapshot = await state.mutex.runExclusive(async () => {
             state.replayEnabled = enabled;
             const roomIds = enabled ? [] : [...state.rooms.keys()];
+            if (!enabled) {
+              for (const room of state.rooms.values()) room.live = false;
+            }
             return { enabled, roomIds };
           });
 
@@ -596,7 +599,6 @@ export async function startHttpService(opts: { state: ServerState; host: string;
           }
 
           u.monitor = monitor;
-          if (monitor && !to.live) to.live = true;
           await state.mutex.runExclusive(async () => {
             u.room = to;
           });
@@ -707,7 +709,6 @@ export async function startHttpService(opts: { state: ServerState; host: string;
           state.logger.info(tl(state.serverLang, "log-room-game-start", { room: room.id, users: usersText, monitorsSuffix }));
           await room.send((c) => broadcastRoomAll(room.id, c), { type: "StartPlaying" });
           room.resetGameTime((id) => state.users.get(id));
-          room.live = true;
           if (state.replayEnabled && room.replayEligible) await state.replayRecorder.startRoom(room.id, room.chart!.id, room.userIds());
           room.state = { type: "Playing", results: new Map(), aborted: new Set() };
           await room.onStateChange((c) => broadcastRoomAll(room.id, c));

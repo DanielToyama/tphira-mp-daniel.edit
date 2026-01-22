@@ -92,7 +92,9 @@ describe("端到端（mock 远端 HTTP）", () => {
     const prevTip = process.env.ROOM_LIST_TIP;
     process.env.ROOM_LIST_TIP = "群：123456；查房间：example.com";
 
-    const running = await startServer({ port: 0, config: { monitors: [200] } });
+    await rm(join(process.cwd(), "record"), { recursive: true, force: true });
+
+    const running = await startServer({ port: 0, config: { monitors: [200], replay_enabled: true } });
     const port = running.address().port;
 
     const alice = await Client.connect("127.0.0.1", port);
@@ -150,6 +152,7 @@ describe("端到端（mock 远端 HTTP）", () => {
       await alice.close();
       await bob.close();
       await running.close();
+      await rm(join(process.cwd(), "record"), { recursive: true, force: true });
     }
   });
 
@@ -186,7 +189,9 @@ describe("端到端（mock 远端 HTTP）", () => {
   }, 10000);
 
   test("观战者不读数据导致广播背压时，结算仍能正常结束（不应卡死/心跳误断）", async () => {
-    const running = await startServer({ port: 0, config: { monitors: [200] } });
+    await rm(join(process.cwd(), "record"), { recursive: true, force: true });
+
+    const running = await startServer({ port: 0, config: { monitors: [200], replay_enabled: true } });
     const port = running.address().port;
     const alice = await Client.connect("127.0.0.1", port, { timeoutMs: 30000 });
     const bob = await Client.connect("127.0.0.1", port, { timeoutMs: 30000 });
@@ -221,6 +226,7 @@ describe("端到端（mock 远端 HTTP）", () => {
       await alice.close();
       await bob.close();
       await running.close();
+      await rm(join(process.cwd(), "record"), { recursive: true, force: true });
     }
   }, 30000);
 
@@ -846,6 +852,44 @@ describe("端到端（mock 远端 HTTP）", () => {
       expect(existsSync(userDir)).toBe(false);
     } finally {
       process.env.ADMIN_TOKEN = prevAdmin;
+      await alice.close();
+      await bob.close();
+      await running.close();
+      await rm(join(process.cwd(), "record"), { recursive: true, force: true });
+    }
+  }, 30000);
+
+  test("回放录制默认关闭：不落盘", async () => {
+    await rm(join(process.cwd(), "record"), { recursive: true, force: true });
+
+    const running = await startServer({ port: 0, config: { monitors: [200] } });
+    const port = running.address().port;
+
+    const alice = await Client.connect("127.0.0.1", port);
+    const bob = await Client.connect("127.0.0.1", port);
+
+    try {
+      await alice.authenticate("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+      await bob.authenticate("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+
+      await alice.createRoom("room1");
+      await bob.joinRoom("room1", true);
+
+      await alice.selectChart(1);
+      await alice.requestStart();
+      await bob.ready();
+
+      await waitFor(() => alice.roomState()?.type === "Playing", 5000);
+
+      await alice.sendTouches([{ time: 1, points: [[0, { x: 0, y: 1 }]] }]);
+      await alice.sendJudges([{ time: 1, line_id: 1, note_id: 1, judgement: 0 } as any]);
+
+      await alice.played(1);
+      await waitFor(() => alice.roomState()?.type === "SelectChart", 5000);
+
+      const recordDir = join(process.cwd(), "record");
+      expect(existsSync(recordDir)).toBe(false);
+    } finally {
       await alice.close();
       await bob.close();
       await running.close();

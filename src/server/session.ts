@@ -332,7 +332,6 @@ export class Session {
         logger: this.state.logger,
         onEnterPlaying: async (r) => {
           if (!r.chart) return;
-          r.live = true;
           if (this.state.replayEnabled && r.replayEligible) await this.state.replayRecorder.startRoom(r.id, r.chart.id, r.userIds());
         },
         onGameEnd: async (r) => {
@@ -369,7 +368,6 @@ export class Session {
           logger: this.state.logger,
           onEnterPlaying: async (r) => {
             if (!r.chart) return;
-            r.live = true;
             if (this.state.replayEnabled && r.replayEligible) await this.state.replayRecorder.startRoom(r.id, r.chart.id, r.userIds());
           },
           onGameEnd: async (r) => {
@@ -406,20 +404,22 @@ export class Session {
       case "Touches": {
         const room = user.room;
         if (!room) return null;
+        if (room.state.type !== "Playing") return null;
         if (!room.isLive()) return null;
         const last = cmd.frames.at(-1);
         if (last) user.gameTime = last.time;
         this.state.logger.info(tl(this.state.serverLang, "log-user-touches", { user: user.name, room: room.id, count: String(cmd.frames.length) }));
-        this.state.replayRecorder.appendTouches(room.id, user.id, cmd.frames);
+        if (this.state.replayEnabled && room.replayEligible) this.state.replayRecorder.appendTouches(room.id, user.id, cmd.frames);
         void this.broadcastRoomMonitors(room, { type: "Touches", player: user.id, frames: cmd.frames });
         return null;
       }
       case "Judges": {
         const room = user.room;
         if (!room) return null;
+        if (room.state.type !== "Playing") return null;
         if (!room.isLive()) return null;
         this.state.logger.info(tl(this.state.serverLang, "log-user-judges", { user: user.name, room: room.id, count: String(cmd.judges.length) }));
-        this.state.replayRecorder.appendJudges(room.id, user.id, cmd.judges);
+        if (this.state.replayEnabled && room.replayEligible) this.state.replayRecorder.appendJudges(room.id, user.id, cmd.judges);
         void this.broadcastRoomMonitors(room, { type: "Judges", player: user.id, judges: cmd.judges });
         return null;
       }
@@ -440,6 +440,7 @@ export class Session {
           this.state.logger.mark(tl(this.state.serverLang, "log-room-created", { user: user.name, room: room.id }));
           await room.send((c) => this.broadcastRoom(room, c), { type: "CreateRoom", user: user.id });
           if (this.state.replayEnabled && room.replayEligible) {
+            room.live = true;
             const fake = this.state.replayRecorder.fakeMonitorInfo();
             await this.broadcastRoom(room, { type: "OnJoinRoom", info: fake });
             await room.send((c) => this.broadcastRoom(room, c), { type: "JoinRoom", user: fake.id, name: fake.name });
@@ -467,7 +468,6 @@ export class Session {
           if (!okJoin) throw new Error(user.lang.format("join-room-full"));
 
           user.monitor = cmd.monitor;
-          if (cmd.monitor && !room.live) room.live = true;
 
           const suffix = cmd.monitor ? tl(this.state.serverLang, "label-monitor-suffix") : "";
           this.state.logger.mark(tl(this.state.serverLang, "log-room-joined", { user: user.name, suffix, room: room.id }));
@@ -506,7 +506,6 @@ export class Session {
             disbandRoom: (r) => this.disbandRoom(r),
             onEnterPlaying: async (r) => {
               if (!r.chart) return;
-              r.live = true;
               if (this.state.replayEnabled && r.replayEligible) await this.state.replayRecorder.startRoom(r.id, r.chart.id, r.userIds());
             },
             onGameEnd: async (r) => {
@@ -569,7 +568,6 @@ export class Session {
             disbandRoom: (r) => this.disbandRoom(r),
             onEnterPlaying: async (r) => {
               if (!r.chart) return;
-              r.live = true;
               if (this.state.replayEnabled && r.replayEligible) await this.state.replayRecorder.startRoom(r.id, r.chart.id, r.userIds());
             },
             onGameEnd: async (r) => {
@@ -596,7 +594,6 @@ export class Session {
               disbandRoom: (r) => this.disbandRoom(r),
               onEnterPlaying: async (r) => {
                 if (!r.chart) return;
-                r.live = true;
                 if (this.state.replayEnabled && r.replayEligible) await this.state.replayRecorder.startRoom(r.id, r.chart.id, r.userIds());
               },
               onGameEnd: async (r) => {
@@ -640,7 +637,7 @@ export class Session {
             if (room.state.aborted.has(user.id)) throw new Error(user.lang.format("room-game-aborted"));
             if (room.state.results.has(user.id)) throw new Error(user.lang.format("record-already-uploaded"));
             room.state.results.set(user.id, record);
-            this.state.replayRecorder.setRecordId(room.id, user.id, record.id);
+            if (this.state.replayEnabled && room.replayEligible) this.state.replayRecorder.setRecordId(room.id, user.id, record.id);
             await room.checkAllReady({
               usersById: (id) => this.state.users.get(id),
               broadcast: (c) => this.broadcastRoom(room, c),
@@ -651,7 +648,6 @@ export class Session {
               disbandRoom: (r) => this.disbandRoom(r),
               onEnterPlaying: async (r) => {
                 if (!r.chart) return;
-                r.live = true;
                 if (this.state.replayEnabled && r.replayEligible) await this.state.replayRecorder.startRoom(r.id, r.chart.id, r.userIds());
               },
               onGameEnd: async (r) => {
@@ -680,7 +676,6 @@ export class Session {
               disbandRoom: (r) => this.disbandRoom(r),
               onEnterPlaying: async (r) => {
                 if (!r.chart) return;
-                r.live = true;
                 if (this.state.replayEnabled && r.replayEligible) await this.state.replayRecorder.startRoom(r.id, r.chart.id, r.userIds());
               },
               onGameEnd: async (r) => {
@@ -736,7 +731,6 @@ export class Session {
         logger: this.state.logger,
         onEnterPlaying: async (r) => {
           if (!r.chart) return;
-          r.live = true;
           if (this.state.replayEnabled && r.replayEligible) await this.state.replayRecorder.startRoom(r.id, r.chart.id, r.userIds());
         },
         onGameEnd: async (r) => {
