@@ -1,3 +1,7 @@
+see-our-web = >访问iphira.danieltoyama.fun实时获取我们的服务器动态！<
+chat-group-0= 来加入我们的群组一起聊天吧！
+chat-group-1= 群①：655504577
+chat-group-2= 群②：832068553
 
 create-id-occupied = 房间 ID 已被占用
 
@@ -19,7 +23,7 @@ cli-invalid-monitors = MONITORS 不合法
 
 label-monitor-suffix = （观战者）
 
-chat-welcome = "{ $userName }"你好！欢迎来到 { $serverName } 服务器！
+chat-welcome = "{ $userName }"你好！欢迎来到 { $serverName } ！
 chat-separator = ==================
 chat-hitokoto = { $quote } —— { $from }
 chat-hitokoto-from-unknown = 佚名

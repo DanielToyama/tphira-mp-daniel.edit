@@ -1,3 +1,7 @@
+see-our-web = >Click iphira.danieltoyama.fun to get fastest info!<
+chat-group-0= Join us QQ Group Chat with us！
+chat-group-1= Group①：655504577
+chat-group-2= Group②：832068553
 
 create-id-occupied = Room ID is occupied
 

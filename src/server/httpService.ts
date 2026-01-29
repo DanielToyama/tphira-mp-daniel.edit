@@ -123,7 +123,68 @@ export async function startHttpService(opts: { state: ServerState; host: string;
         await Promise.allSettled(tasks);
       };
       const pickRandomUserId = (ids: number[]): number | null => ids[0] ?? null;
+      if (req.method === "GET" && url.pathname === "/api/rooms") {
+        const out = await state.mutex.runExclusive(async () => {
+          const rooms: Array<{
+            id: string;
+            player_count: number;
+            state: string;
+            mode: string;
+            locked: boolean;
+            players: string[];
+            current_chart: { name: string; id: number } | null;
+          }> = [];
 
+          for (const [rid, room] of state.rooms) {
+            const id = roomIdToString(rid);
+            if (id.startsWith("_")) continue;  // 保持过滤逻辑
+
+            // 获取玩家列表
+            const players = room.userIds().map((id) => {
+              const u = state.users.get(id);
+              return u?.name ?? String(id);
+            });
+
+            const player_count = players.length;
+
+            // 状态映射：Rust风格的状态文本
+            let stateStr: string;
+            if (room.state.type === "Playing") {
+              stateStr = "游戏中";
+            } else if (room.locked) {
+              stateStr = "已锁定";
+            } else {
+              stateStr = "准备中";
+            }
+
+            // 模式映射
+            const mode = room.cycle ? "循环模式" : "普通模式";
+
+            // 谱面信息
+            const current_chart = room.chart ? {
+              id: Number(room.chart.id) || 0,  // 确保是数字
+              name: room.chart.name
+            } : null;
+
+            rooms.push({
+              id,
+              player_count,
+              state: stateStr,
+              mode,
+              locked: room.locked,
+              players,
+              current_chart
+            });
+          }
+
+          // 可选：保持排序
+          rooms.sort((a, b) => a.id.localeCompare(b.id));
+          return rooms;  // 直接返回数组，不包装
+        });
+
+        writeJson(200, out);
+        return;
+      }
       if (req.method === "GET" && url.pathname === "/room") {
         const out = await state.mutex.runExclusive(async () => {
           const rooms: Array<{

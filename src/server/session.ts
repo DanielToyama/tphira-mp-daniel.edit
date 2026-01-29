@@ -277,12 +277,19 @@ export class Session {
     await this.sendSystemChat(lang.format("chat-separator"));
 
     const hitokoto = await getHitokotoCached();
-    if (hitokoto) {
+/*     if (hitokoto) {
       const fromText = hitokoto.from ? hitokoto.from : lang.format("chat-hitokoto-from-unknown");
       await this.sendSystemChat(lang.format("chat-hitokoto", { quote: hitokoto.quote, from: fromText }));
     } else {
       await this.sendSystemChat(lang.format("chat-hitokoto-unavailable"));
-    }
+    } */
+    await this.sendSystemChat(lang.format("see-our-web"));
+    await this.sendSystemChat(lang.format("chat-separator"));
+    await this.sendSystemChat(lang.format("chat-group-0"));
+    await this.sendSystemChat(lang.format("chat-group-1"));
+    await this.sendSystemChat(lang.format("chat-group-2"));
+
+    await this.sendSystemChat(lang.format("chat-separator"));
   }
 
   private async markLost(): Promise<void> {
