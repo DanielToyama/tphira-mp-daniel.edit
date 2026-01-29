@@ -4,7 +4,9 @@ Phira MP 的 Typescript 实现，目前正在逐步完善，还请多多包涵
 > 注：本项目参考了 [Phira MP Rust](https://github.com/TeamFlos/Phira-MP) 网络协议实现，感谢 TeamFlos 团队的贡献
 
 > [!TIP]
-> 本项目由 TRAE SOLO 模式开发，存在一定的问题，见谅，如有更好的实现欢迎 PR<br>
+> 来自皮梦的Phira-MP Typescript 实现改动，根据AGPL协议要求开源，低质量开发🙏
+> 
+> 由 TRAE SOLO 模式开发，存在一定的问题，见谅，如有更好的实现欢迎 PR<br>
 > 不会写代码，轻喷（（（
 
 ## ☁️ 在雨云部署（推荐）
