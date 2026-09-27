@@ -53,8 +53,9 @@ chat-roomlist-empty = 利用可能なルームはありません
 chat-roomlist-item = { $id }（{ $count }/{ $max }）
 chat-disabled-by-server = 安全上の問題を避けるため、このサーバーではチャットが無効になっています。
 
-see-our-web = >iphira.danieltoyama.fun でサーバーの最新情報をチェック！<
-see-our-web-migration = >お知らせ：今後、当サイトのドメインは phira.danieluu.top に、ステータスサイトは https://iphira.danieluu.top/ に全面変更されます<
+see-our-web = >iphira.danieluu.top でサーバーの状態を確認できます！<
+see-our-web-migration-0 = >お知らせ：サーバーアドレスは phira.danieluu.top:26638 に変更されます。お早めに切り替えてください！<
+see-our-web-migration-1 = >旧 phira.danieltoyama.fun:26638=>phira.danieluu.top:26638<
 chat-group-0 = QQグループに参加して一緒にチャットしましょう！
 chat-group-1 = グループ①：655504577
 chat-group-2 = グループ②：832068553

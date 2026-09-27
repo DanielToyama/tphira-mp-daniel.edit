@@ -11,6 +11,23 @@ import { getAvailableRoomsText } from "./roomListCache.js";
 export type HitokotoValue = { quote: string; from: string };
 
 /**
+ * 服务器地址迁移公告的截止时间（UTC+8 的 2027-02-01 00:00）。
+ * 到达该时间后不再展示迁移公告，避免过期信息长期占用欢迎信息。
+ * 该判定仅用于内部逻辑，不会展示在玩家可见的地方。
+ */
+const MIGRATION_NOTICE_DEADLINE_MS = Date.parse("2027-02-01T00:00:00+08:00");
+
+/**
+ * 是否仍需要展示服务器地址迁移公告。
+ * 截止时间之前展示；到达/超过截止时间后不再展示（判定本身不输出给玩家）。
+ *
+ * @param now - 当前时间戳（毫秒），默认取系统时间；参数化便于确定性验证
+ */
+export function shouldShowMigrationNotice(now: number = Date.now()): boolean {
+  return now < MIGRATION_NOTICE_DEADLINE_MS;
+}
+
+/**
  * 生成并发送欢迎消息(系统聊天)
  *
  * 内容包括: 清屏空行 + 欢迎语 + 版本 + 房间列表 + 服务器提示(可选) + 站点/群组信息。
@@ -47,8 +64,11 @@ export async function sendWelcomeExtras(opts: {
     // 站点与群组信息(替代此前的"一言"展示)
     parts.push(sep);
     parts.push(lang.format("see-our-web") + "\n");
-    // 域名迁移公告：旧域名仍可用，此处仅提示后续变更
-    parts.push(lang.format("see-our-web-migration") + "\n");
+    // 服务器地址迁移公告：仅在截止时间前展示，过期后自动隐藏
+    if (shouldShowMigrationNotice()) {
+      parts.push(lang.format("see-our-web-migration-0") + "\n");
+      parts.push(lang.format("see-our-web-migration-1") + "\n");
+    }
     parts.push(sep);
     parts.push(lang.format("chat-group-0") + "\n");
     parts.push(lang.format("chat-group-1") + "\n");

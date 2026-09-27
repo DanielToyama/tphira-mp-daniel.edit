@@ -49,15 +49,15 @@ describe("核心功能", () => {
         return (
           bobChat.some((s) => s.includes("当前可用的房间如下：")) &&
           bobChat.some((s) => s.includes("群：123456")) &&
-          bobChat.some((s) => s.includes("iphira.danieltoyama.fun")) &&
-          bobChat.some((s) => s.includes("iphira.danieluu.top"))
+          bobChat.some((s) => s.includes("iphira.danieluu.top")) &&
+          bobChat.some((s) => s.includes("phira.danieluu.top:26638"))
         );
       }, 1500);
 
-      expect(bobChat.join("\n")).toContain("iphira.danieltoyama.fun");
-      // 域名迁移公告：新域名与状态站都要出现在欢迎信息里
-      expect(bobChat.join("\n")).toContain("phira.danieluu.top");
-      expect(bobChat.join("\n")).toContain("https://iphira.danieluu.top/");
+      // 状态站与迁移公告（公告含新地址与旧地址对照）
+      expect(bobChat.join("\n")).toContain("iphira.danieluu.top");
+      expect(bobChat.join("\n")).toContain("phira.danieluu.top:26638");
+      expect(bobChat.join("\n")).toContain("phira.danieltoyama.fun:26638");
       expect(bobChat.join("\n")).toContain("655504577");
       expect(bobChat.join("\n")).toContain("当前可用的房间如下：");
       expect(bobChat.join("\n")).toContain("room1（1/8）");

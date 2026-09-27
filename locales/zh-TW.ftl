@@ -53,8 +53,9 @@ chat-roomlist-empty = 目前沒有可用房間
 chat-roomlist-item = { $id }（{ $count }/{ $max }）
 chat-disabled-by-server = 為避免安全問題，該伺服器已停用聊天
 
-see-our-web = >前往 iphira.danieltoyama.fun 即時取得我們的伺服器動態！<
-see-our-web-migration = >公告：日後本站網域將全面更換為 phira.danieluu.top，狀態站更換為 https://iphira.danieluu.top/<
+see-our-web = >前往 iphira.danieluu.top 取得伺服器狀態！<
+see-our-web-migration-0 = >公告伺服器位址即將更換為 phira.danieluu.top:26638，請及時更換！<
+see-our-web-migration-1 = >原 phira.danieltoyama.fun:26638=>phira.danieluu.top:26638<
 chat-group-0 = 來加入我們的群組一起聊天吧！
 chat-group-1 = 群①：655504577
 chat-group-2 = 群②：832068553
