@@ -86,6 +86,7 @@ export async function tryHandlePublicRoutes(ctx: RequestContext): Promise<boolea
       const rooms: Array<{
         id: string;
         player_count: number;
+        max_players: number;
         state: string;
         mode: string;
         locked: boolean;
@@ -124,6 +125,7 @@ export async function tryHandlePublicRoutes(ctx: RequestContext): Promise<boolea
         rooms.push({
           id: roomid,
           player_count,
+          max_players: room.maxUsers,
           state: stateStr,
           mode,
           locked: room.locked,

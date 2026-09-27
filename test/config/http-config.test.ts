@@ -224,6 +224,7 @@ describe("HTTP和配置", () => {
       const json = (await resp.json()) as Array<{
         id: string;
         player_count: number;
+        max_players: number;
         state: string;
         mode: string;
         locked: boolean;
@@ -235,6 +236,8 @@ describe("HTTP和配置", () => {
       expect(json.length).toBe(1);
       expect(json[0]!.id).toBe("room1");
       expect(json[0]!.player_count).toBe(1);
+      // 人数上限供自有前端展示「当前/上限」，默认配置为 8
+      expect(json[0]!.max_players).toBe(8);
       expect(json[0]!.players).toEqual(["Alice"]);
       expect(json[0]!.locked).toBe(false);
       expect(json[0]!.mode).toBe("普通模式");
@@ -244,6 +247,31 @@ describe("HTTP和配置", () => {
     } finally {
       await alice.close();
       await bob.close();
+      await running.close();
+    }
+  });
+
+  test("HTTP /api/rooms 的 max_players 跟随 room_max_users 配置", async () => {
+    const running = await startServer({
+      port: 0,
+      config: { monitors: [200], http_service: true, http_port: 0, room_max_users: 64 }
+    });
+    const port = running.address().port;
+    const httpPort = running.http!.address().port;
+
+    const alice = await Client.connect("127.0.0.1", port);
+
+    try {
+      await alice.authenticate("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+      await alice.createRoom("room64");
+
+      const resp = await originalFetch(`http://127.0.0.1:${httpPort}/api/rooms`);
+      const json = (await resp.json()) as Array<{ id: string; player_count: number; max_players: number }>;
+
+      expect(json[0]!.id).toBe("room64");
+      expect(json[0]!.max_players).toBe(64);
+    } finally {
+      await alice.close();
       await running.close();
     }
   });
