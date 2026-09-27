@@ -1,0 +1,99 @@
+# 当 push 到 main 且本提交的 package.json version 比上一提交更新时，自动：测试 → 构建 → 发布
+name: 版本号变更时自动发布
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - package.json
+
+concurrency:
+  group: release-on-version-bump-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # 仅 checkout + 读 package.json 比对版本，只读即可（写权限留给 release 复用流）。
+    permissions:
+      contents: read
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      version: ${{ steps.check.outputs.version }}
+      prerelease: ${{ steps.check.outputs.prerelease }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: 检查版本是否比推送前版本更新
+        id: check
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          current=$(node -p "require('./package.json').version")
+          echo "version=$current" >> "$GITHUB_OUTPUT"
+
+          rm -f /tmp/old-package.json
+          if [[ -n "$BEFORE_SHA" && "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]]; then
+            git show "${BEFORE_SHA}:package.json" > /tmp/old-package.json 2>/dev/null || true
+          fi
+
+          if [[ -s /tmp/old-package.json ]]; then
+            previous=$(node -p "try { require('/tmp/old-package.json').version } catch(e) { '0.0.0' }" 2>/dev/null) || previous="0.0.0"
+          else
+            previous="0.0.0"
+          fi
+
+          # semver 感知比较：先比 major.minor.patch，core 相同时「正式版 > 预发布」，预发布间按标识符比较
+          should_release=$(node -e "
+            const parse = v => { const [c, pre] = String(v || '0.0.0').split('-'); return { n: c.split('.').map(x => parseInt(x) || 0), pre: pre || '' }; };
+            const cmp = (a, b) => {
+              const A = parse(a), B = parse(b), len = Math.max(A.n.length, B.n.length);
+              for (let i = 0; i < len; i++) { const x = A.n[i] || 0, y = B.n[i] || 0; if (x !== y) return x > y ? 1 : -1; }
+              if (A.pre === B.pre) return 0;
+              if (!A.pre) return 1;            // 无后缀(正式版) 大于 有后缀(预发布)
+              if (!B.pre) return -1;
+              const sa = A.pre.split('.'), sb = B.pre.split('.'), m = Math.max(sa.length, sb.length);
+              for (let i = 0; i < m; i++) {
+                const x = sa[i], y = sb[i]; if (x === y) continue;
+                if (x === undefined) return -1; if (y === undefined) return 1;
+                const dx = /^[0-9]+$/.test(x), dy = /^[0-9]+$/.test(y);
+                if (dx && dy) return +x > +y ? 1 : -1;
+                return x > y ? 1 : -1;
+              }
+              return 0;
+            };
+            console.log(cmp(process.argv[1], process.argv[2]) > 0 ? 'true' : 'false');
+          " "$current" "$previous")
+
+          # 版本号带 '-'（如 1.11.1-rc.1）视为预发布
+          if [[ "$current" == *-* ]]; then prerelease=true; else prerelease=false; fi
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+
+          echo "should_release=$should_release" >> "$GITHUB_OUTPUT"
+
+          if [[ "$should_release" == "true" ]]; then
+            echo "当前提交版本: $current > 推送前版本: $previous，触发发布（预发布=$prerelease）"
+          else
+            echo "当前 $current 未高于推送前版本 $previous，跳过发布"
+          fi
+  release:
+    needs: [check-version]
+    if: needs.check-version.outputs.should_release == 'true'
+    uses: ./.github/workflows/reusable-release.yml
+    with:
+      version: ${{ needs.check-version.outputs.version }}
+      prerelease: ${{ needs.check-version.outputs.prerelease == 'true' }}
+    secrets: inherit

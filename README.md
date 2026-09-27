@@ -1,8 +1,13 @@
+<img src=".github/resources/tsmp.png" alt="tphira-mp logo" align="right" width="30%">
+<div align="center">
+  <h1>Typescript Phira-MP</h1>
+  <h3>Phira MP 的 <b>Typescript</b> 实现</h3>
+  <h5><i>目前正在逐步完善，还请多多包涵</i></h5>
+</div>
 
-# Phira MP Typescript
-
-Phira MP 的 Typescript 实现，目前正在逐步完善，还请多多包涵
-> 注：本项目参考了 [Phira MP Rust](https://github.com/TeamFlos/Phira-MP) 网络协议实现，感谢 TeamFlos 团队的贡献
+> [!NOTE]
+> 本项目由各种AI工具开发，存在一定的问题，见谅，如有更好的实现欢迎 PR<br>
+> 有好的提议欢迎提ISSUE！
 
 > [!TIP]
 > 来自皮梦的Phira-MP Typescript 实现改动，根据AGPL协议要求开源，针对自身需求小修，没有含金量🙏
@@ -10,12 +15,15 @@ Phira MP 的 Typescript 实现，目前正在逐步完善，还请多多包涵
 > 由 TRAE SOLO 模式开发，存在一定的问题，见谅，如有更好的实现欢迎 PR<br>
 > 不会写代码，轻喷（（（
 
+## 本项目专属讨论区
+
+https://bbs.07210700.xyz/c/7-category/7
+
+欢迎前往注册并讨论！
+
 ## ☁️ 在雨云部署（推荐）
 
 [![Deploy on RainYun](https://rainyun-apps.cn-nb1.rains3.com/materials/deploy-on-rainyun-en.svg)](https://app.rainyun.com/apps/rca/store/7497?ref=Pimeng_)
-
-## 🚇 在 RailWay 上部署
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/b5IFPX?referralCode=GjgH_Y)
 
 ## 🇿 在 Zeabur 上部署
 
@@ -25,51 +33,51 @@ Phira MP 的 Typescript 实现，目前正在逐步完善，还请多多包涵
 
 镜像托管在 GHCR：
 
-- `ghcr.io/pimeng/phira-mp-ts`<br>
-镜像 -> `ghcr.1ms.run/pimeng/phira-mp-ts`<br>
+- `ghcr.io/pimeng/tphira-mp` <br>
+- 镜像 -> `ghcr.1ms.run/pimeng/tphira-mp` <br>
+
 建议优先使用镜像源而并非 ghcr.io
 
-启动示例（使用环境变量生成配置文件）：
+> [!WARNING]
+> `PHIRA_MP_HOME` 决定运行时读写配置 / 本地化 / 日志 / 数据的根目录。容器内若工作目录不是项目根目录，建议设置 `PHIRA_MP_HOME=/app`，保证这些文件落在稳定且可写的位置。
+> 即使该目录暂无 `locales/`，服务端也会优先在线拉取，失败时回退到嵌入二进制的本地化兜底；`server_config.yml` 缺失时会自动生成，因此离线也能启动。
 
-```bash
-docker run --rm -p 12346:12346 -p 12347:12347 ^
-  -e TZ="Asia/Shanghai" ^
-  -e HOST="::" ^
-  -e PORT=12346 ^
-  -e HTTP_SERVICE=true ^
-  -e HTTP_PORT=12347 ^
-  -e ROOM_MAX_USERS=8 ^
-  -e MONITORS="2" ^
-  ghcr.1ms.run/pimeng/phira-mp-ts:latest
-```
+## 📦 版本号说明
 
-- 可选环境变量：
-  - `LOG_LEVEL`：控制写入日志文件的最小等级（默认 `INFO`）
-  - `CONSOLE_LOG_LEVEL`：控制输出到终端的最小等级（默认 `INFO`）
+版本号采用三段式 `A.B.C`：
 
-注意事项：
-- 如果容器内运行时工作目录不是项目根目录，请设置 `PHIRA_MP_HOME=/app`（指向包含 `locales/` 与 `server_config.yml` 的目录），避免本地化与配置读取失败。
+- **A** — 兼容的 Phira 客户端协议版本。变动通常意味着与旧版客户端不兼容。
+- **B** — 服务端大版本，代表性能或使用体验的显著提升。
+- **C** — 小修小补、小功能。
 
-## 🔧 服务端配置（server_config.yml）
+带 `-rc.N` 后缀的为**预发布版**（如 `1.11.1-rc.1`），供尝鲜与压测，不建议生产环境直接使用。确认稳定后才会发布去掉后缀的正式版。
 
-支持大写/小写两种键名（例如 `HOST` / `host`）
+Docker 镜像标签三档，按需选择：
 
-- SERVER_NAME(string): 当前服务器名字，会显示在欢迎信息中（默认 `Phira MP`）
-- MONITORS(array): 观战用户ID列表（默认 `2`）
-- HOST(string): 服务监听地址（默认 `::`）
-- PORT(number): 游戏监听端口（默认 `12346`）
-- HTTP_SERVICE(boolean): 是否启动 HTTP 服务（默认 `false`）
-- HTTP_PORT(number): HTTP 服务监听端口（默认 `12347`）
-- ROOM_MAX_USERS(number): 单房间最大玩家数（默认 `8`，最大 `64`）
-- PHIRA_MP_LANG(string): 服务端默认语言（默认 `zh-CN`）
-- ADMIN_TOKEN(string): 管理员接口鉴权 Token（默认 `replace_me`）
-- ADMIN_DATA_PATH(string): 管理员数据持久化路径（JSON）（默认 `./admin_data.json`）
-- ROOM_LIST_TIP(string): 登录后展示可用房间列表后追加的提示文案（可用于群宣传/查房间等，纯文本）（默认空）
+| 标签 | 含义 |
+| --- | --- |
+| `:latest` | 最新正式版 |
+| `:vA.B` | 跟随该系列的最新补丁（如 `:v1.11` 始终指向 1.11.x 的最新版） |
+| `:vA.B.C` | 锁定到具体版本，最稳定可控 |
 
+## 🔧 服务端配置
+
+配置文件为 `server_config.yml`，键名统一使用全大写，支持使用环境变量配置。
+
+**优先级：** 命令行 > 环境变量 > 配置文件
+
+**完整配置文档请参考**：[这里](docs/configuration.md)
+
+> [!NOTE]
+> 注意，若你的服务器环境为 en-US.UTF-8 ，则极有可能遇到服务端语言为英文的情况，可以启动时使用 `LANG=zh-CN` 指定为中文，或在 `server_config.yml` 中设置 `LANG: zh-CN`
+> 例如： 
+> ```bash
+> LANG=zh-CN ./server
+> ```
 
 ## 🔨 安装与构建
 
-本项目使用 pnpm 作为包管理器，请先安装 pnpm 9.15 或以上版本
+本项目使用 pnpm 作为包管理器，请先安装 pnpm 10.29.3 或以上版本
 ```bash
 npm install -g pnpm
 ```
@@ -90,15 +98,40 @@ pnpm run build
 开发模式（从源代码运行）：
 
 ```bash
-pnpm run dev:server -- --port 12346
+pnpm run dev --port 12346
 ```
 
 生产模式（先编译再运行）：
 
 ```bash
 pnpm run build
-pnpm start -- --port 12346
+pnpm start --port 12346
 ```
+
+## 🛡️ 进程守护（生产环境强烈建议）
+
+服务端内置了进程级异常兜底：单个未捕获的 Promise 拒绝（`unhandledRejection`）只会记录日志、不会退出；而 `uncaughtException` 会在记录日志后**优雅关闭并以非零码退出**，把"是否拉起"交给外部守护进程。因此生产环境请务必在守护进程下运行，崩溃后即可自动恢复：
+
+- **Docker**：使用仓库根目录的 [`docker-compose.yml`](docker-compose.yml)（已带 `restart: unless-stopped`），或 `docker run --restart=unless-stopped ...`
+- **systemd**：
+
+  ```ini
+  # /etc/systemd/system/phira-mp.service
+  [Unit]
+  Description=Phira MP Server
+  After=network.target
+
+  [Service]
+  WorkingDirectory=/opt/phira-mp
+  ExecStart=/usr/bin/node dist/server/main.js --port 12346
+  Restart=always
+  RestartSec=3
+
+  [Install]
+  WantedBy=multi-user.target
+  ```
+
+- **pm2**：`pm2 start dist/server/main.js --name phira-mp -- --port 12346`
 
 ## 🔍 测试
 
@@ -106,9 +139,37 @@ pnpm start -- --port 12346
 pnpm test
 ```
 
+## 📈 性能测试
+
+项目内置了压测工具，支持连接、房间、gameplay 三种场景，且自带 mock 认证服务器，无需真实 Phira API token 即可运行。
+
+一键运行全部压测：
+
+```bash
+pnpm bench -- --duration 60
+```
+
+多用户并发场景（mock 认证自动为每个 token 分配独立用户）：
+
+```bash
+pnpm bench -- --tokens "a,b,c,d" --rooms 10 --players-per-room 4 --duration 60
+```
+
+单独运行某个压测：
+
+```bash
+pnpm run bench:connect -- --clients 300 --rate 50 --duration 60 --token test
+pnpm run bench:room -- --rooms 50 --players-per-room 4 --duration 60 --tokens "a,b,c,d"
+pnpm run bench:gameplay -- --rooms 10 --players-per-room 4 --hz 20 --duration 60 --tokens "a,b,c,d"
+```
+
+压测结束后，报告自动保存到 `bench-results/` 目录。
+
+详细文档请参考 [性能测试指南](docs/performance-testing.md)。
+
 ## 🔧 编译为可执行文件（本地）
 
-本项目使用 Node 的 SEA（Single Executable Applications）方式打包为单个可执行文件，并将运行所需的资源（`locales/`、配置文件）一并放进 `release/` 目录。
+本项目使用 Node 的 SEA（Single Executable Applications）方式打包为**单个**可执行文件。本地化资源已嵌入二进制，配置文件在首次运行时自动生成，因此 `release/` 目录只有可执行文件本身。
 
 ```bash
 pnpm install
@@ -116,73 +177,175 @@ pnpm run package:sea
 ```
 
 输出目录：
-- `release/phira-mp-server(.exe)`：可执行文件
-- `release/locales/`：本地化资源
-- `release/server_config.yml`：配置文件（可修改）
+- `release/phira-mp-server(.exe)`：可执行文件（本地化资源已嵌入其中）
+
+**首次运行行为：**
+- `server_config.yml`：在可执行文件同目录自动生成。优先从 GitHub 拉取完整带注释示例，拉取失败则生成一份精简（无注释）配置。
+- 本地化文件：优先在线拉取到运行目录的 `locales/`，拉取失败则使用嵌入二进制的兜底版本，保证离线 / `raw.githubusercontent.com` 被墙时仍可正常运行。
+
+### 自定义翻译（运行时覆盖）
+
+无需重新打包即可改翻译：在运行目录的 `locales/` 下新建 `<语言>.ftl`（如 `zh-CN.ftl`），**只写要修改的键**，服务端启动时会逐键覆盖二进制自带翻译（覆盖而非整体替换，未列出的键仍走内置）。例如：
+
+```ftl
+chat-welcome = 欢迎光临 { $serverName }！
+chat-disabled-by-server = 本服已关闭聊天
+```
+
+支持的语言：`en-US` `zh-CN` `zh-TW` `ja-JP` `ko-KR` `ru-RU`。启动日志会打印 `已应用 locales/<语言>.ftl 覆盖（N 个键）`。
+
+> i18n 的唯一手工编辑源是 `locales/*.ftl`。唯一**提交入库**的生成产物是 `src/server/utils/embeddedLocales.ts`（嵌入二进制 / 打进 bundle 的离线兜底）；修改任意 `.ftl` 后运行 `pnpm gen:locales` 重新生成（`build` / `package:sea` 已自动包含）。
+>
+> `locales.json`（合并后的 release 资产）**不入库、也不写进 `locales/`**——它由 `pnpm gen:locales-json` 按需生成到构建目录（默认 `dist-bundle/`），CI / Dockerfile 在发布时各自从 ftl 生成并附带。
 
 ## 📋 环境要求
 
-- Node.js >= 22
-- pnpm >= 9.15
+- Node.js >= 24
+- pnpm >= 10.29.3
 
-## 🖥️ 硬件要求
+## 🏗️ 项目架构
 
-经过测试，本服务端可以跑在 0.5核 128MB 5Mbps 非常极限的情况下经过压测仍然不死
+本项目采用模块化架构，主要分为以下几个层次：
 
-测试环境：
-- 服务器：Debian12 fnOS 64位
-- 服务端：Docker版本 0.1.2
-- 性能分配： 1024权重 0.5核 128MB 内存
-- 压测参数：单机器最大连接数2000，线程池2000，发包数 2000pps，10台机器同时压测
+```
+src/
+├── server/
+│   ├── main.ts          # 服务器入口，CLI 参数解析
+│   ├── core/            # 核心层
+│   │   ├── server.ts    # 服务器生命周期管理
+│   │   ├── state.ts     # 全局状态管理（用户、房间、会话）
+│   │   ├── types.ts     # TypeScript 类型定义
+│   │   ├── configValues.ts  # 配置解析与合并
+│   │   └── version.ts   # 版本信息
+│   ├── network/         # 网络层
+│   │   ├── session.ts   # TCP 会话管理（认证、命令路由）
+│   │   ├── httpService.ts   # HTTP/WebSocket 服务
+│   │   ├── websocketService.ts  # WebSocket 实时推送
+│   │   ├── proxyProtocol.ts   # HAProxy PROXY Protocol 支持
+│   │   └── httpHelpers.ts     # HTTP 工具函数
+│   ├── game/            # 游戏逻辑层
+│   │   ├── room.ts      # 房间状态机与游戏流程
+│   │   ├── user.ts      # 用户模型
+│   │   └── roomUtils.ts # 房间工具函数
+│   ├── replay/          # 回放录制层
+│   │   ├── replayRecorder.ts  # 回放录制引擎
+│   │   ├── replayStorage.ts   # 回放文件存储
+│   │   ├── replayFormat.ts    # 回放格式定义
+│   │   ├── replayCleanup.ts   # 过期回放清理
+│   │   └── autoUpload.ts      # 自动上传逻辑
+│   ├── cli/             # 命令行管理界面
+│   │   ├── cli.ts       # CLI 主程序（命令分发，GUI 控制台共用）
+│   │   └── cliHelpers.ts    # CLI 辅助函数
+│   ├── gui/             # 服务端 GUI
+│   │   ├── guiPage.ts   # 嵌入式管理面板页面（/gui）
+│   │   └── guiWindow.ts # GUI 窗口启动器（浏览器应用模式）
+│   └── utils/           # 工具模块
+│       ├── logger.ts    # 日志系统（限流、黑名单）
+│       ├── consoleHub.ts    # 控制台日志中心（GUI 实时日志流）
+│       ├── processStats.ts  # CPU/内存采样器（GUI 性能图表）
+│       ├── l10n.ts      # 国际化/本地化
+│       ├── cache.ts     # 谱面缓存
+│       ├── mutex.ts     # 互斥锁
+│       ├── rateLimiter.ts   # 日志限流器
+│       └── appPaths.ts  # 应用路径管理
+├── common/              # 共享代码（服务端/客户端共用）
+│   ├── binary.ts        # 二进制读写工具
+│   ├── commands.ts      # 协议命令定义与编解码
+│   ├── stream.ts        # TCP 流管理（批量发送、优先级）
+│   ├── framing.ts       # 帧编码（解决粘包）
+│   ├── http.ts          # HTTP 请求工具
+│   ├── uuid.ts          # UUID 生成与转换
+│   └── roomId.ts        # 房间 ID 解析
+└── client/              # 客户端代码
+    └── client.ts        # 客户端实现
+```
 
-压测后最大峰值带宽为 4Mbps，内存仅占用98MB，CPU占用率10%不到，CPU总计4.02 s
+### 核心设计要点
 
-![聊天截图](https://github.com/Pimeng/phira-mp-ts/raw/main/.github/resources/chat_.png)
-![phira](https://github.com/Pimeng/phira-mp-ts/raw/main/.github/resources/phira_.png)
+- **配置热重载**：支持运行时修改配置（部分配置需重启生效）
+- **批量发送优化**：低优先级消息延迟 5ms 批量发送，提高吞吐量
+- **观战数据缓冲**：触摸/判定数据 50ms 聚合窗口，减少网络冲击
+- **断线重连**：10 秒 dangling 窗口，保留房间和状态
+- **回放录制**：独立录制引擎，支持自动上传到分享站
+- **HAProxy 支持**：通过 PROXY Protocol 获取真实客户端 IP
 
 ## 🔭 本项目长期远景
 
 - [x] 谱面录制功能
+- [x] 完善协议层，完整适配原版 Phira 客户端
 - [ ] 谱面回放播放客户端/网页端
-- [ ] 完善协议层，完整适配原版 Phira 客户端
 - [ ] 完善服务端，添加更多功能
 - [ ] 等待~~画饼~~添加
 
-## 🔧 API接口
+## 🖥️ 服务端 GUI
 
-请参考 [此文档](api.md)
+类似 Minecraft 服务端 GUI：配置 `GUI: true` 或加启动参数 `--gui`，服务器启动时自动弹出独立的 GUI 程序窗口（基于系统浏览器应用模式，自动登录，零额外依赖）：
+
+- CPU / 内存实时曲线（约 10 分钟历史）与在线玩家、房间等业务计数
+- 房间 / 玩家列表实时推送（状态、谱面、房主、观战者）
+- 与终端一致的实时日志控制台，可直接执行全部 CLI 命令（`help`、`kick`、`broadcast`、`stop` 等）
+
+也可作为网页从其他机器访问（`http://服务器地址:HTTP端口/gui`，用 `ADMIN_TOKEN` 登录）。详见 [GUI 文档](docs/gui.md)。
+
+## 📚 文档 / Documentation
+
+完整的文档请访问 [文档中心](docs/index.md)
 
 ##  🌍 公共访问前端（需要自备API地址）
 
-https://admin.phira.link/
+https://t.phira.link/
+
+## 🔧 开发指南
+
+### 项目结构约定
+
+- `src/server/` - 服务端代码，使用 ESM 模块
+- `src/common/` - 共享代码，服务端和客户端共用
+- `test/` - 测试文件，使用 Vitest 测试框架
+- `docs/` - 文档目录
+- `locales/` - 本地化 ftl 源（`<语言>.ftl`，唯一手工编辑源；运行时也可放局部 ftl 覆盖）
+
+### 添加新命令
+
+1. 在 `src/common/commands.ts` 中定义命令类型（ClientCommand/ServerCommand）
+2. 实现对应的 encode/decode 函数
+3. 在 `src/server/network/session.ts` 的 `process()` 方法中处理命令
+4. 如有需要，在 `src/server/game/room.ts` 中实现房间级逻辑
+
+### 配置文件
+
+配置文件为 `server_config.yml`，示例见 `server_config.example.yml`。
+支持使用环境变量覆盖配置（键名统一使用全大写）。
+
+**优先级：** 命令行 > 环境变量 > 配置文件
+
+### 运行测试
+
+```bash
+pnpm test           # 运行所有测试
+pnpm test:watch     # 监视模式运行测试
+```
+
+### 调试模式
+
+设置环境变量 `LOG_LEVEL=DEBUG` 可开启详细日志：
+
+```bash
+# Windows PowerShell
+$env:LOG_LEVEL="DEBUG"; pnpm run dev
+
+# Linux/macOS
+LOG_LEVEL=DEBUG pnpm run dev
+```
 
 ## 🙏 致谢
 
-- [Phira MP（Rust 版）](https://github.com/TeamFlos/phira-mp)：项目本体，协议与核心逻辑参考
-- [TRAE](https://www.trae.ai/)：本项目IDE，以及 SOLO 模式的提供
-- GPT-5.2 模型
+- [Michaelwucoc](https://github.com/Michaelwucoc)：赞助了本项目，为本项目大力推动了进度
+- [RENaa_FD](https://github.com/lRENyaaa)：赞助了本项目，为本项目大力推动了进度，并且和他交流了很多的代码经验！特别鸣谢！！
 
 还有帮助我测试的朋友们：
 
 - [Dmocken](https://github.com/Dmocken)
 - [RainCore1115](https://github.com/RainCore1115)
-- [RENaa_FD](https://github.com/lRENyaaa)
 
-感谢
-
-## 开源协议与版权声明 (License & Copyright)
-
-### 1. 协议选择
-本项目采用 **GNU Affero General Public License v3.0 (AGPL-3.0)** 协议开源。
-
-### 2. 开发者权利与义务
-我们欢迎并支持社区成员利用本项目搭建服务器、进行二次开发甚至进行商业化运营，但你必须遵守以下准则：
-* **必须开源：** 如果你修改了本项目代码并将其用于提供网络服务（如开启游戏私服），你必须根据 AGPL-3.0 协议的要求，向你的用户公开修改后的完整源代码。
-* **注明改动：** 在你修改的代码文件中，必须保留原作者的版权信息，并明确标注你所做的改动及改动日期。
-* **品牌归属：** 商业化行为不得暗示或宣称获得了原作者的官方背书。
-
-### 3. 关于原作者声明
-本项目是基于 [Phira MP Rust](https://github.com/TeamFlos/Phira-MP) 提供的网络协议规范进行的另一种编程语言的独立实现。
-* 本项目在底层协议逻辑上与原仓库保持兼容。
-* 内部架构、业务逻辑处理及性能优化部分由本项目作者原创开发。
-* 感谢原作者在协议研究方面做出的先驱贡献。
+在这里大力的感谢你们！谢谢！没有你们就没有本项目的今天！

@@ -1,0 +1,468 @@
+import type http from "node:http";
+import { WebSocketServer, WebSocket } from "ws";
+import type { ServerState } from "../core/state.js";
+import type { RoomId } from "../../common/roomId.js";
+import { roomIdToString, parseRoomId } from "../../common/roomId.js";
+import { getClientIp, isLoopbackIp } from "../../common/http.js";
+import { tl } from "../utils/l10n.js";
+import {
+  buildAdminRoomsData,
+  buildRoomUpdateData,
+  type AdminRoomData,
+  type RoomUpdateData
+} from "../game/adminViews.js";
+import type { ConsoleLine } from "../utils/consoleHub.js";
+
+type WebSocketClient = {
+  ws: WebSocket;
+  roomId: RoomId | null;
+  userId: number | null;
+  isAlive: boolean;
+  isAdmin: boolean;
+  adminToken: string | null;
+  lastAdminSnapshot: string | null; // 用于比较变化
+  clientIp: string; // 客户端 IP 地址
+  isConsole: boolean; // 是否订阅了控制台日志流（GUI）
+};
+
+export type WebSocketService = {
+  wss: WebSocketServer;
+  clients: Map<WebSocket, WebSocketClient>;
+  broadcastRoomUpdate: (roomId: RoomId) => Promise<void>;
+  broadcastRoomLog: (roomId: RoomId, message: string, timestamp: Date) => Promise<void>;
+  broadcastAdminUpdate: () => Promise<void>;
+  close: () => Promise<void>;
+};
+
+type WebSocketMessage =
+  | { type: "subscribe"; roomId: string; userId?: number }
+  | { type: "unsubscribe" }
+  | { type: "ping" }
+  | { type: "admin_subscribe"; token: string }
+  | { type: "admin_unsubscribe" }
+  | { type: "console_subscribe"; token: string }
+  | { type: "console_unsubscribe" };
+
+type WebSocketResponse =
+  | { type: "error"; message: string }
+  | { type: "subscribed"; roomId: string }
+  | { type: "unsubscribed" }
+  | { type: "pong" }
+  | { type: "room_update"; data: RoomUpdateData }
+  | { type: "room_log"; data: { message: string; timestamp: number } }
+  | { type: "admin_subscribed" }
+  | { type: "admin_unsubscribed" }
+  | { type: "admin_update"; data: AdminUpdateData }
+  | { type: "console_subscribed"; data: { lines: ConsoleLine[] } }
+  | { type: "console_unsubscribed" }
+  | { type: "console_log"; data: ConsoleLine };
+
+type AdminUpdateData = {
+  timestamp: number;
+  changes: {
+    rooms?: AdminRoomData[];
+    total_rooms?: number;
+  };
+};
+
+export function startWebSocketService(opts: { httpServer: http.Server; state: ServerState }): WebSocketService {
+  const { httpServer, state } = opts;
+  const wss = new WebSocketServer({ noServer: true });
+  const clients = new Map<WebSocket, WebSocketClient>();
+  // 房间订阅索引：roomId string -> Set<WebSocket>，避免广播时全量遍历
+  const roomSubscribers = new Map<string, Set<WebSocket>>();
+
+  const addRoomSubscriber = (roomId: RoomId, ws: WebSocket): void => {
+    const key = roomIdToString(roomId);
+    let set = roomSubscribers.get(key);
+    if (!set) {
+      set = new Set();
+      roomSubscribers.set(key, set);
+    }
+    set.add(ws);
+  };
+
+  const removeRoomSubscriber = (roomId: RoomId | null, ws: WebSocket): void => {
+    if (!roomId) return;
+    const key = roomIdToString(roomId);
+    const set = roomSubscribers.get(key);
+    if (set) {
+      set.delete(ws);
+      if (set.size === 0) roomSubscribers.delete(key);
+    }
+  };
+
+  // 管理员客户端索引, 避免广播时遍历所有客户端
+  const adminClients = new Set<WebSocket>();
+
+  // 控制台日志订阅客户端（GUI），并按需挂接 ConsoleHub
+  const consoleClients = new Set<WebSocket>();
+  let unsubscribeConsoleHub: (() => void) | null = null;
+
+  const ensureConsoleHubSubscription = (): void => {
+    if (unsubscribeConsoleHub) return;
+    unsubscribeConsoleHub = state.consoleHub.subscribe((line) => {
+      if (consoleClients.size === 0) return;
+      const message = JSON.stringify({ type: "console_log", data: line } satisfies WebSocketResponse);
+      for (const ws of consoleClients) {
+        if (ws.readyState === WebSocket.OPEN) ws.send(message);
+      }
+    });
+  };
+
+  const dropConsoleClient = (ws: WebSocket): void => {
+    consoleClients.delete(ws);
+    if (consoleClients.size === 0 && unsubscribeConsoleHub) {
+      unsubscribeConsoleHub();
+      unsubscribeConsoleHub = null;
+    }
+  };
+
+  // Admin 更新防抖定时器
+  let adminUpdateTimer: NodeJS.Timeout | null = null;
+  let pendingAdminUpdate = false;
+  const ADMIN_DEBOUNCE_MS = 100;
+
+  // 处理 HTTP 升级请求
+  httpServer.on("upgrade", (request, socket, head) => {
+    const url = new URL(request.url ?? "/", "http://localhost");
+
+    // 只处理 /ws 路径
+    if (url.pathname !== "/ws") {
+      socket.destroy();
+      return;
+    }
+
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit("connection", ws, request);
+    });
+  });
+
+  /** WebSocket 单条消息最大大小：64KB */
+  const MAX_WS_MESSAGE_SIZE = 64 * 1024;
+
+  const sendResponse = (ws: WebSocket, response: WebSocketResponse): void => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(response));
+  };
+
+  // WebSocket 连接处理
+  wss.on("connection", (ws: WebSocket, req: http.IncomingMessage) => {
+    const clientIp = getClientIp(req, state.config.real_ip_header || "X-Forwarded-For");
+
+    const client: WebSocketClient = {
+      ws,
+      roomId: null,
+      userId: null,
+      isAlive: true,
+      isAdmin: false,
+      adminToken: null,
+      lastAdminSnapshot: null,
+      clientIp,
+      isConsole: false
+    };
+    clients.set(ws, client);
+
+    state.logger.debug(tl(state.serverLang, "log-websocket-connected", { total: String(clients.size) }));
+
+    ws.on("message", async (data: Buffer) => {
+      try {
+        // 限制消息大小，防止恶意客户端发送超大消息导致内存问题
+        if (data.length > MAX_WS_MESSAGE_SIZE) {
+          sendResponse(ws, { type: "error", message: "message-too-large" });
+          ws.close(1009, "message-too-large");
+          return;
+        }
+        const text = data.toString("utf8");
+        const msg = JSON.parse(text) as WebSocketMessage;
+
+        if (msg.type === "ping") {
+          client.isAlive = true;
+          sendResponse(ws, { type: "pong" });
+          return;
+        }
+
+        if (msg.type === "subscribe") {
+          try {
+            const roomId = parseRoomId(msg.roomId);
+            const room = state.rooms.get(roomId) ?? null;
+
+            if (!room) {
+              sendResponse(ws, { type: "error", message: "room-not-found" });
+              return;
+            }
+
+            removeRoomSubscriber(client.roomId, ws);
+            client.roomId = roomId;
+            client.userId = msg.userId ?? null;
+            addRoomSubscriber(roomId, ws);
+
+            sendResponse(ws, { type: "subscribed", roomId: msg.roomId });
+
+            // 立即发送当前房间状态
+            await sendRoomUpdate(ws, roomId);
+          } catch {
+            sendResponse(ws, { type: "error", message: "invalid-room-id" });
+          }
+          return;
+        }
+
+        if (msg.type === "unsubscribe") {
+          removeRoomSubscriber(client.roomId, ws);
+          client.roomId = null;
+          client.userId = null;
+          sendResponse(ws, { type: "unsubscribed" });
+          return;
+        }
+
+        if (msg.type === "admin_subscribe") {
+          // 验证管理员权限
+          const isAuthorized = await verifyAdminToken(msg.token, client.clientIp);
+          if (!isAuthorized) {
+            sendResponse(ws, { type: "error", message: "unauthorized" });
+            return;
+          }
+
+          client.isAdmin = true;
+          client.adminToken = msg.token;
+          client.lastAdminSnapshot = null;
+          adminClients.add(ws);
+
+          sendResponse(ws, { type: "admin_subscribed" });
+
+          // 立即发送当前完整状态
+          const adminData = buildAdminRoomsData(state);
+          await sendAdminUpdate(ws, client, adminData, JSON.stringify(adminData), true);
+          return;
+        }
+
+        if (msg.type === "admin_unsubscribe") {
+          client.isAdmin = false;
+          client.adminToken = null;
+          client.lastAdminSnapshot = null;
+          adminClients.delete(ws);
+          sendResponse(ws, { type: "admin_unsubscribed" });
+          return;
+        }
+
+        if (msg.type === "console_subscribe") {
+          // 与 admin_subscribe 相同的管理员鉴权
+          const isAuthorized = await verifyAdminToken(msg.token, client.clientIp);
+          if (!isAuthorized) {
+            sendResponse(ws, { type: "error", message: "unauthorized" });
+            return;
+          }
+
+          client.isConsole = true;
+          consoleClients.add(ws);
+          ensureConsoleHubSubscription();
+
+          // 订阅成功时回填最近的日志缓冲
+          sendResponse(ws, { type: "console_subscribed", data: { lines: state.consoleHub.getRecent() } });
+          return;
+        }
+
+        if (msg.type === "console_unsubscribe") {
+          client.isConsole = false;
+          dropConsoleClient(ws);
+          sendResponse(ws, { type: "console_unsubscribed" });
+          return;
+        }
+      } catch {
+        sendResponse(ws, { type: "error", message: "invalid-message" });
+      }
+    });
+
+    ws.on("pong", () => {
+      client.isAlive = true;
+    });
+
+    ws.on("close", () => {
+      removeRoomSubscriber(client.roomId, ws);
+      // 清理 admin snapshot 释放内存
+      client.lastAdminSnapshot = null;
+      client.adminToken = null;
+      adminClients.delete(ws);
+      dropConsoleClient(ws);
+      clients.delete(ws);
+      state.logger.debug(tl(state.serverLang, "log-websocket-disconnected", { total: String(clients.size) }));
+    });
+
+    ws.on("error", (err: Error) => {
+      state.logger.warn(`WebSocket error: ${err.message}`);
+    });
+  });
+
+  // 验证管理员 Token
+  const verifyAdminToken = async (token: string, clientIp: string): Promise<boolean> => {
+    const adminToken = state.config.admin_token?.trim() || "";
+
+    // 检查永久管理员 Token
+    if (adminToken && token === adminToken) {
+      return true;
+    }
+
+    // 检查本机 GUI 窗口专用 token（仅回环地址可用）
+    if (state.guiLocalToken && token === state.guiLocalToken && isLoopbackIp(clientIp)) {
+      return true;
+    }
+
+    // 清理过期的临时 token（同时清理已被封禁的 token 防止内存泄漏）
+    const now = Date.now();
+    for (const [t, data] of state.tempAdminTokens) {
+      if (data.banned || now > data.expiresAt) {
+        state.tempAdminTokens.delete(t);
+      }
+    }
+
+    const tempTokenData = state.tempAdminTokens.get(token);
+    if (!tempTokenData) return false;
+    if (now > tempTokenData.expiresAt) {
+      state.tempAdminTokens.delete(token);
+      return false;
+    }
+    if (tempTokenData.ip !== clientIp) {
+      // IP 不匹配，封禁并删除该 token
+      state.tempAdminTokens.delete(token);
+      return false;
+    }
+    return true;
+  };
+
+  // 发送管理员更新（支持增量更新）
+  const sendAdminUpdate = (
+    ws: WebSocket,
+    client: WebSocketClient,
+    roomsData: AdminRoomData[],
+    roomsSnapshot: string,
+    forceFullUpdate = false
+  ): void => {
+    if (!client.isAdmin) return;
+
+    // 没有变化且不是首次推送：跳过
+    if (!forceFullUpdate && client.lastAdminSnapshot === roomsSnapshot) return;
+
+    const responseStr = `{"type":"admin_update","data":{"timestamp":${Date.now()},"changes":{"rooms":${roomsSnapshot},"total_rooms":${roomsData.length}}}}`;
+
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(responseStr);
+      client.lastAdminSnapshot = roomsSnapshot;
+    }
+  };
+
+  // 心跳检测
+  const heartbeatInterval = setInterval(() => {
+    const toRemove: WebSocket[] = [];
+    for (const [ws, client] of clients) {
+      if (!client.isAlive) {
+        toRemove.push(ws);
+        continue;
+      }
+      client.isAlive = false;
+      try {
+        ws.ping();
+      } catch {
+        // ping 失败，标记为待移除
+        toRemove.push(ws);
+      }
+    }
+    // 批量清理断开的连接，避免遍历时修改 Map
+    for (const ws of toRemove) {
+      try {
+        ws.terminate();
+      } catch {
+        /* ignore */
+      }
+      const c = clients.get(ws);
+      if (c) {
+        removeRoomSubscriber(c.roomId, ws);
+        c.lastAdminSnapshot = null;
+        c.adminToken = null;
+      }
+      adminClients.delete(ws);
+      dropConsoleClient(ws);
+      clients.delete(ws);
+    }
+  }, 30000); // 30秒心跳
+
+  const sendRoomUpdate = async (ws: WebSocket, roomId: RoomId): Promise<void> => {
+    const data = buildRoomUpdateData(state, roomId);
+    if (!data) return;
+    sendResponse(ws, { type: "room_update", data });
+  };
+
+  const broadcastRoomUpdate = async (roomId: RoomId): Promise<void> => {
+    const subscribers = roomSubscribers.get(roomIdToString(roomId));
+    if (!subscribers || subscribers.size === 0) return;
+    const data = buildRoomUpdateData(state, roomId);
+    if (!data) return;
+
+    const message = JSON.stringify({ type: "room_update", data } satisfies WebSocketResponse);
+
+    for (const ws of subscribers) {
+      if (ws.readyState !== WebSocket.OPEN) continue;
+      ws.send(message, (err) => {
+        if (err) state.logger.warn(`WebSocket send error: ${err.message}`);
+      });
+    }
+  };
+
+  const broadcastRoomLog = async (roomId: RoomId, message: string, timestamp: Date): Promise<void> => {
+    const messageStr = JSON.stringify({
+      type: "room_log",
+      data: { message, timestamp: timestamp.getTime() }
+    } satisfies WebSocketResponse);
+
+    const subscribers = roomSubscribers.get(roomIdToString(roomId));
+    if (!subscribers) return;
+
+    for (const ws of subscribers) {
+      if (ws.readyState !== WebSocket.OPEN) continue;
+      ws.send(messageStr);
+    }
+  };
+
+  const broadcastAdminUpdate = async (): Promise<void> => {
+    // 无管理员订阅时跳过昂贵的 buildAdminRoomsData
+    if (adminClients.size === 0) return;
+    // 防抖：100ms 内合并多次变更
+    pendingAdminUpdate = true;
+    if (adminUpdateTimer) return;
+    adminUpdateTimer = setTimeout(() => {
+      adminUpdateTimer = null;
+      if (!pendingAdminUpdate) return;
+      pendingAdminUpdate = false;
+      const roomsData = buildAdminRoomsData(state);
+      const roomsSnapshot = JSON.stringify(roomsData);
+      for (const [ws, client] of clients) {
+        if (client.isAdmin) {
+          sendAdminUpdate(ws, client, roomsData, roomsSnapshot, false);
+        }
+      }
+    }, ADMIN_DEBOUNCE_MS);
+  };
+
+  return {
+    wss,
+    clients,
+    broadcastRoomUpdate,
+    broadcastRoomLog,
+    broadcastAdminUpdate,
+    close: async () => {
+      clearInterval(heartbeatInterval);
+      if (adminUpdateTimer) {
+        clearTimeout(adminUpdateTimer);
+        adminUpdateTimer = null;
+      }
+      for (const [ws] of clients) ws.close();
+      clients.clear();
+      adminClients.clear();
+      consoleClients.clear();
+      if (unsubscribeConsoleHub) {
+        unsubscribeConsoleHub();
+        unsubscribeConsoleHub = null;
+      }
+      roomSubscribers.clear();
+      wss.close();
+    }
+  };
+}

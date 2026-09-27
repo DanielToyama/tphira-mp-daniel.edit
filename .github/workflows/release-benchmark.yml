@@ -1,0 +1,390 @@
+name: Release Benchmark
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      network_scenarios:
+        description: 'Comma-separated network scenarios to run (normal,weak,mobile,bad). Release always runs normal only.'
+        required: false
+        default: 'normal'
+        type: string
+      duration:
+        description: 'Benchmark duration in seconds per test'
+        required: false
+        default: '60'
+        type: string
+
+concurrency:
+  group: release-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+# 顶层最小只读基线；仅 release-asset 在 job 级提权到 contents:write 以上传 Release 附件。
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      scenarios: ${{ steps.set-matrix.outputs.scenarios }}
+    steps:
+      - name: Determine scenarios
+        id: set-matrix
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo 'scenarios=["normal"]' >> "$GITHUB_OUTPUT"
+          else
+            INPUT="${{ inputs.network_scenarios }}"
+            [ -z "$INPUT" ] && INPUT="normal"
+            IFS=',' read -ra ARR <<< "$INPUT"
+            JSON=$(for s in "${ARR[@]}"; do echo "$s" | xargs; done | jq -R . | jq -s . | tr -d '\n')
+            echo "scenarios=$JSON" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js and dependencies
+        uses: ./.github/actions/setup-node-pnpm
+      - name: Build
+        run: pnpm run build
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifact
+          path: dist/
+
+  benchmark:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        scenario: ${{ fromJson(needs.prepare.outputs.scenarios) }}
+      fail-fast: false
+    env:
+      SERVER_PORT: 12346
+      BENCH_HOST: 127.0.0.1
+      BENCH_DURATION: ${{ inputs.duration || '60' }}
+      BENCH_TOKEN: bench
+      BENCH_CONNECT_CLIENTS: 300
+      BENCH_CONNECT_RATE: 50
+      BENCH_ROOMS: 50
+      BENCH_PLAYERS_PER_ROOM: 4
+      BENCH_GAMEPLAY_HZ: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js and dependencies
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifact
+          path: dist/
+
+      - name: Prepare server config
+        run: |
+          if [ ! -f server_config.yml ]; then
+            cp server_config.example.yml server_config.yml
+          fi
+          mkdir -p bench-results
+
+      - name: Run benchmark for ${{ matrix.scenario }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SCENARIO="${{ matrix.scenario }}"
+          RESULT_DIR="bench-results/$SCENARIO"
+          mkdir -p "$RESULT_DIR"
+
+          # ── Netem helpers ───────────────────────────────────────────────
+          get_netem_args() {
+            case "$1" in
+              normal) echo "" ;;
+              weak)   echo "delay 80ms 30ms loss 0.5%" ;;
+              mobile) echo "delay 150ms 80ms loss 1%" ;;
+              bad)    echo "delay 300ms 150ms loss 3%" ;;
+              *)      echo "" ;;
+            esac
+          }
+
+          setup_netem() {
+            local args
+            args=$(get_netem_args "$SCENARIO")
+            if [ -n "$args" ]; then
+              echo ">>> Applying tc netem on lo: $args"
+              sudo tc qdisc add dev lo root netem $args || true
+            else
+              echo ">>> No netem for scenario: $SCENARIO"
+            fi
+          }
+
+          cleanup_netem() {
+            echo ">>> Cleaning up tc netem on lo..."
+            sudo tc qdisc del dev lo root || true
+          }
+
+          # ── Service helpers ─────────────────────────────────────────────
+          start_services() {
+            echo ">>> Starting mock auth server..."
+            ./node_modules/.bin/tsx bench/start-mock-auth.ts > mock-auth.url &
+            MOCK_AUTH_PID=$!
+            for i in $(seq 1 30); do
+              if [ -s mock-auth.url ]; then break; fi
+              sleep 0.2
+            done
+            MOCK_AUTH_URL=$(cat mock-auth.url)
+            export PHIRA_API_ENDPOINT="$MOCK_AUTH_URL"
+            echo "Mock auth ready: $MOCK_AUTH_URL"
+
+            echo ">>> Starting production server..."
+            node dist/server/main.js --port "$SERVER_PORT" > "$RESULT_DIR/server.log" 2>&1 &
+            SERVER_PID=$!
+            for i in $(seq 1 30); do
+              if nc -z "$BENCH_HOST" "$SERVER_PORT" 2>/dev/null; then break; fi
+              sleep 0.2
+            done
+            echo "Server ready on port $SERVER_PORT"
+
+            echo ">>> Starting metrics recorder..."
+            ./node_modules/.bin/tsx bench/server-metrics-recorder.ts \
+              --pid "$SERVER_PID" \
+              --output "$RESULT_DIR/server-process-metrics.json" \
+              --stop-file "$RESULT_DIR/.stop-metrics" &
+            METRICS_PID=$!
+          }
+
+          stop_services() {
+            local stop_file="$RESULT_DIR/.stop-metrics"
+
+            if [ -n "${METRICS_PID:-}" ] && kill -0 "$METRICS_PID" 2>/dev/null; then
+              touch "$stop_file" 2>/dev/null || true
+              sleep 1
+              kill "$METRICS_PID" 2>/dev/null || true
+              for i in $(seq 1 10); do
+                if ! kill -0 "$METRICS_PID" 2>/dev/null; then break; fi
+                sleep 0.5
+              done
+              kill -9 "$METRICS_PID" 2>/dev/null || true
+              rm -f "$stop_file"
+            fi
+
+            if [ -n "${SERVER_PID:-}" ] && kill -0 "$SERVER_PID" 2>/dev/null; then
+              kill "$SERVER_PID" 2>/dev/null || true
+              for i in $(seq 1 10); do
+                if ! kill -0 "$SERVER_PID" 2>/dev/null; then break; fi
+                sleep 0.5
+              done
+              kill -9 "$SERVER_PID" 2>/dev/null || true
+            fi
+
+            if [ -n "${MOCK_AUTH_PID:-}" ] && kill -0 "$MOCK_AUTH_PID" 2>/dev/null; then
+              kill "$MOCK_AUTH_PID" 2>/dev/null || true
+              for i in $(seq 1 10); do
+                if ! kill -0 "$MOCK_AUTH_PID" 2>/dev/null; then break; fi
+                sleep 0.5
+              done
+              kill -9 "$MOCK_AUTH_PID" 2>/dev/null || true
+            fi
+          }
+
+          run_benchmarks() {
+            local bench_exit=0
+            export BENCH_RESULTS_DIR="$RESULT_DIR"
+
+            echo ""
+            echo ">>> Running connect-bench <<<"
+            pnpm run bench:connect -- \
+              --host "$BENCH_HOST" --port "$SERVER_PORT" \
+              --clients "$BENCH_CONNECT_CLIENTS" --rate "$BENCH_CONNECT_RATE" --duration "$BENCH_DURATION" \
+              --token "$BENCH_TOKEN" || bench_exit=$?
+
+            echo ""
+            echo ">>> Running room-bench <<<"
+            pnpm run bench:room -- \
+              --host "$BENCH_HOST" --port "$SERVER_PORT" \
+              --rooms "$BENCH_ROOMS" --players-per-room "$BENCH_PLAYERS_PER_ROOM" --duration "$BENCH_DURATION" \
+              --token "$BENCH_TOKEN" || bench_exit=$?
+
+            echo ""
+            echo ">>> Running gameplay-bench <<<"
+            pnpm run bench:gameplay -- \
+              --host "$BENCH_HOST" --port "$SERVER_PORT" \
+              --rooms "$BENCH_ROOMS" --players-per-room "$BENCH_PLAYERS_PER_ROOM" --hz "$BENCH_GAMEPLAY_HZ" --duration "$BENCH_DURATION" \
+              --token "$BENCH_TOKEN" || bench_exit=$?
+
+            return $bench_exit
+          }
+
+          trap 'stop_services; cleanup_netem' EXIT INT TERM
+          setup_netem
+          start_services
+          run_benchmarks
+          stop_services
+          cleanup_netem
+
+      - name: Upload scenario results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results-${{ matrix.scenario }}
+          path: bench-results/
+          if-no-files-found: ignore
+
+  report:
+    needs: benchmark
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js and dependencies
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Download all scenario results
+        uses: actions/download-artifact@v4
+        with:
+          path: bench-results
+          pattern: bench-results-*
+          merge-multiple: true
+
+      - name: Inspect results
+        run: ls -laR bench-results/
+
+      - name: Generate performance report
+        run: |
+          ./node_modules/.bin/tsx bench/generate-performance-report.ts || echo "Warning: report generation failed."
+
+      - name: Upload final benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            bench-results/
+            performance-report.md
+          if-no-files-found: ignore
+
+      # 仅 release 需要单文件压缩包作为 Release 附件；与上面可浏览的散文件分开，
+      # 避免同一 artifact 内既有散文件又有内容相同的 tarball（重复打包）。
+      - name: Package release archive
+        if: github.event_name == 'release'
+        run: tar -czf benchmark-results.tar.gz bench-results/ performance-report.md || true
+
+      - name: Upload release archive
+        if: github.event_name == 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-archive
+          path: benchmark-results.tar.gz
+          if-no-files-found: ignore
+
+      - name: Write Job Summary
+        run: |
+          {
+            echo "## 📊 基准测试摘要 / Benchmark Summary"
+            echo ""
+            if [ -f performance-report.md ]; then
+              cat performance-report.md
+            else
+              echo "> ⚠️ 未找到 performance-report.md / performance-report.md not found."
+            fi
+            echo ""
+            echo "---"
+            echo "*触发方式 / Triggered by: ${{ github.event_name }}* · *运行编号 / Run: ${{ github.run_id }}*"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Generate AI Summary
+        env:
+          LLM_BASEURL: ${{ vars.LLM_BASEURL }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          LLM_KEY: ${{ secrets.LLM_KEY }}
+        run: |
+          if [ -z "$LLM_BASEURL" ] || [ -z "$LLM_MODEL" ] || [ -z "$LLM_KEY" ]; then
+            echo "⚠️ LLM configuration missing, skipping AI summary."
+            exit 0
+          fi
+
+          if [ ! -f performance-report.md ]; then
+            echo "⚠️ performance-report.md not found, skipping AI summary."
+            exit 0
+          fi
+
+          API_ENDPOINT="${LLM_BASEURL%/}/chat/completions"
+          REPORT_CONTENT=$(cat performance-report.md)
+
+          PAYLOAD=$(jq -n \
+            --arg model "$LLM_MODEL" \
+            --arg content "$REPORT_CONTENT" \
+            '{
+              model: $model,
+              messages: [
+                {role: "system", content: "你是一名 DevOps 性能分析师。以下 benchmark 报告可能包含多个网络场景：normal（无限制）、weak（delay 80ms ±30ms，丢包 0.5%）、mobile（delay 150ms ±80ms，丢包 1%）、bad（delay 300ms ±150ms，丢包 3%）。请对比分析各场景结果，重点关注：1）关键指标（连接延迟、房间创建成功率、消息吞吐）在弱网条件下的退化幅度。2）异常、回归或离群点。3）若出现严重退化，给出可操作的改进建议。请用中文为主、英文为辅输出，使用 bullet points 或短段落，保持简洁。"},
+                {role: "user", content: $content}
+              ],
+              temperature: 0.7,
+              max_tokens: 1500
+            }')
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" "$API_ENDPOINT" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $LLM_KEY" \
+            -d "$PAYLOAD")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "⚠️ LLM API request failed (HTTP $HTTP_CODE)."
+            echo "Response body: $BODY"
+            exit 0
+          fi
+
+          AI_SUMMARY=$(echo "$BODY" | jq -r '.choices[0].message.content // empty')
+
+          if [ -n "$AI_SUMMARY" ]; then
+            {
+              echo ""
+              echo "## 🤖 AI Summary / AI 智能总结"
+              echo ""
+              echo "$AI_SUMMARY"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "AI summary appended to job summary."
+          else
+            echo "⚠️ LLM returned empty content."
+          fi
+
+  release-asset:
+    needs: report
+    if: github.event_name == 'release' && always() && needs.report.result != 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download benchmark archive
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-archive
+
+      - name: Upload to release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: benchmark-results.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

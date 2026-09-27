@@ -1,0 +1,31 @@
+name: 手动构建 Release 和 Docker
+
+on:
+  workflow_dispatch:  # 仅手动触发，自动构建请改 package.json 版本号并 push 到 main
+    inputs:
+      version:
+        description: '发布版本号（留空则读取 package.json）'
+        required: false
+        type: string
+        default: ''
+      prerelease:
+        description: '标记为 Pre-release'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: manual-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    uses: ./.github/workflows/reusable-release.yml
+    with:
+      version: ${{ inputs.version }}
+      prerelease: ${{ inputs.prerelease }}
+    secrets: inherit

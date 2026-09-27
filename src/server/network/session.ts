@@ -1,0 +1,1051 @@
+/**
+ * 客户端会话管理模块
+ *
+ * Session 类代表一个客户端连接会话，负责：
+ * - 协议握手与认证（通过 Phira API 验证用户身份）
+ * - 心跳检测与超时断开
+ * - 命令处理与路由（游戏命令、房间管理、聊天等）
+ * - 观战数据聚合与转发（Touches/Judges 缓冲）
+ * - 断线重连处理（dangle 机制）
+ */
+import type net from "node:net";
+import { err, ok, type StringResult } from "../../common/binary.js";
+import { NOOP } from "../../common/utils.js";
+import type {
+  ClientCommand,
+  ClientRoomState,
+  JoinRoomResponse,
+  ServerCommand,
+  UserInfo
+} from "../../common/commands.js";
+import { HEARTBEAT_DISCONNECT_TIMEOUT_MS } from "../../common/commands.js";
+import type { Stream } from "../../common/stream.js";
+import type { Room } from "../game/room.js";
+import { Room as RoomClass } from "../game/room.js";
+import { parseRoomId } from "../../common/roomId.js";
+import { refreshRoomLive as refreshRoomLiveState } from "../game/roomUtils.js";
+import type { ServerState } from "../core/state.js";
+import type { Chart, RecordData } from "../core/types.js";
+import { User } from "../game/user.js";
+import { Language, tl } from "../utils/l10n.js";
+import { chartCache, recordCache } from "../utils/cache.js";
+import { logRoomInfo, logRoomMark, logRoomWarn } from "../utils/logUtils.js";
+import { MonitorBuffer } from "./session/monitorBuffer.js";
+import {
+  DEFAULT_PHIRA_API_ENDPOINT,
+  fetchPhiraChart,
+  fetchPhiraRecord,
+  fetchPhiraUserInfo,
+  type PhiraUserInfo
+} from "./session/phiraApiClient.js";
+import { sendWelcomeExtras, type HitokotoValue } from "./session/welcomeMessage.js";
+import { getHitokotoCached } from "../utils/hitokotoCache.js";
+import { processClientCommand, type RoomCallbacks } from "./session/commandRouter.js";
+import { CommandRateLimiter, categorize } from "./session/commandRateLimiter.js";
+import { prepareServerCommand, type PreparedServerCommand } from "./serverCommandTransport.js";
+
+/** 观战数据聚合间隔（毫秒） */
+const MONITOR_FLUSH_INTERVAL_MS = 50;
+
+/** 心跳响应常量，避免每次新建对象 */
+const PONG = { type: "Pong" } as const;
+
+/** 活跃会话集合，供全局心跳定时器统一扫描 */
+const activeSessions = new Set<Session>();
+/** 全局心跳定时器句柄 */
+let globalHeartbeatTimer: NodeJS.Timeout | null = null;
+
+/** 全局心跳检查间隔（毫秒） */
+const HEARTBEAT_CHECK_INTERVAL_MS = 2000;
+
+function startGlobalHeartbeat(): void {
+  if (globalHeartbeatTimer) return;
+  globalHeartbeatTimer = setInterval(() => {
+    const now = Date.now();
+    for (const session of activeSessions) {
+      session.checkHeartbeat(now);
+    }
+  }, HEARTBEAT_CHECK_INTERVAL_MS);
+}
+
+// ========== Dangle Sweep（统一扫掠定时器替代每用户 setTimeout） ==========
+type DangleTimeout = {
+  user: User;
+  token: object;
+  deadline: number;
+  state: ServerState;
+};
+
+const dangleTimeouts = new Map<number, DangleTimeout>();
+let dangleSweepTimer: NodeJS.Timeout | null = null;
+
+/** 非对局态断线后保留房间、等待重连的常规 dangle 窗口（毫秒） */
+const DANGLE_WINDOW_MS = 10_000;
+/** 对局（Playing）进行中断线的默认重连宽限（秒）；config.playing_reconnect_grace 未设置时采用，0 表示关闭 */
+const DEFAULT_PLAYING_RECONNECT_GRACE_SEC = 5;
+
+function startDangleSweepIfNeeded(): void {
+  if (dangleSweepTimer) return;
+  dangleSweepTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [userId, timeout] of dangleTimeouts) {
+      if (now >= timeout.deadline) {
+        dangleTimeouts.delete(userId);
+        void processDangleTimeout(timeout);
+      }
+    }
+    if (dangleTimeouts.size === 0 && dangleSweepTimer) {
+      clearInterval(dangleSweepTimer);
+      dangleSweepTimer = null;
+    }
+  }, 1000);
+}
+
+async function processDangleTimeout(timeout: DangleTimeout): Promise<void> {
+  const { user, token, state } = timeout;
+  if (!user.isStillDangling(token)) return;
+
+  const room = user.room;
+  if (!room) {
+    await state.mutex.runExclusive(async () => {
+      state.users.delete(user.id);
+    });
+    state.cleanupUserData(user.id);
+    return;
+  }
+
+  logRoomWarn(
+    state.logger,
+    state.serverLang,
+    room.id,
+    "log-user-dangle-timeout-remove",
+    { user: user.name },
+    { userId: user.id }
+  );
+  await state.mutex.runExclusive(async () => {
+    state.users.delete(user.id);
+  });
+  state.cleanupUserData(user.id);
+
+  const shouldDrop = await room.onUserLeave({
+    user,
+    usersById: (id: number) => state.users.get(id),
+    broadcast: async (cmd: ServerCommand) => {
+      const prepared = prepareServerCommand(cmd);
+      for (const id of room.allParticipantIds()) {
+        const u = state.users.get(id);
+        const session = u?.session;
+        if (session) session.trySendPreparedFast(prepared);
+      }
+    },
+    broadcastToMonitors: (cmd: ServerCommand) => {
+      const prepared = prepareServerCommand(cmd);
+      for (const id of room.monitorIds()) {
+        const u = state.users.get(id);
+        const session = u?.session;
+        if (session) session.trySendPreparedFast(prepared);
+      }
+    },
+    pickRandomUserId: (ids: number[]) => pickRandom(ids),
+    lang: state.serverLang,
+    logger: state.logger,
+    wsService: state.wsService
+  });
+
+  if (shouldDrop) {
+    logRoomInfo(state.logger, state.serverLang, room.id, "log-room-recycled", undefined, { userId: user.id });
+    await state.mutex.runExclusive(async () => {
+      state.rooms.delete(room.id);
+    });
+  } else {
+    refreshRoomLiveState(room, state.replayEnabled);
+  }
+}
+
+/**
+ * 从数组中随机选择一个元素
+ * @param arr - 输入数组
+ * @returns 随机选中的元素，数组为空时返回 null
+ */
+function pickRandom<T>(arr: readonly T[]): T | null {
+  if (arr.length === 0) return null;
+  const idx = Math.floor(Math.random() * arr.length);
+  return arr[idx] ?? null;
+}
+
+/**
+ * 客户端会话类
+ *
+ * 管理单个 TCP 连接的生命周期，包括：
+ * - 连接建立与协议握手
+ * - 用户认证（通过 Phira API Bearer Token）
+ * - 心跳检测与超时断开
+ * - 命令路由与处理
+ * - 观战数据聚合缓冲
+ * - 断线重连支持（dangle 机制）
+ */
+export class Session {
+  /** 会话唯一标识符（UUID） */
+  readonly id: string;
+  /** TCP Socket 连接 */
+  readonly socket: net.Socket;
+  /** 服务器全局状态引用 */
+  readonly state: ServerState;
+  /** 客户端真实 IP 地址（支持 HAProxy PROXY Protocol） */
+  readonly remoteIp: string;
+
+  // ========== 协议状态 ==========
+
+  /** 绑定的流实例（协议握手成功后设置） */
+  private stream: Stream<ServerCommand, ClientCommand> | null = null;
+  /** 协商后的协议版本 */
+  private protocolVersion: number | null = null;
+  /** 是否等待认证（初始为 true，认证成功后设为 false） */
+  private waitingForAuthenticate = true;
+  /** 是否处于 panic 状态（认证失败等致命错误） */
+  private panicked = false;
+  /** 连接是否已断开 */
+  private lost = false;
+  /** 断线时是否保留房间（用于踢出旧连接时保留房间） */
+  private preserveRoomOnLost = false;
+
+  // ========== 心跳检测 ==========
+
+  /** 最后接收数据的时间戳 */
+  private lastRecv = Date.now();
+
+  // ========== Socket 事件监听器（用于断线时移除，防止内存泄漏） ==========
+
+  private readonly onSocketClose = (): void => {
+    void this.markLost();
+  };
+
+  private readonly onSocketError = (): void => {
+    void this.markLost();
+  };
+
+  private readonly onSocketData = (): void => {
+    this.lastRecv = Date.now();
+  };
+
+  // ========== 观战数据缓冲 ==========
+
+  /**
+   * 观战数据聚合缓冲
+   *
+   * 为避免高频实时数据直接冲击网络，将多个事件帧聚合后批量发送给观战者。
+   * 见 ./session/monitorBuffer.ts。
+   */
+  private readonly monitorBuffer: MonitorBuffer;
+
+  /**
+   * 命令级令牌桶限流器（每会话独立）。
+   * 防止已认证客户端刷屏聊天或借大量不同 chart/record id 放大对 Phira API 的请求。
+   * 实时游戏数据（Touches/Judges）与心跳（Ping）不参与限流。
+   */
+  private readonly commandRateLimiter = new CommandRateLimiter();
+
+  /** 关联的用户实例（认证成功后设置） */
+  user: User | null = null;
+  /** RoomCallbacks 缓存（按 Room 实例复用，避免高频游戏中重复创建对象） */
+  private readonly roomCallbacksCache = new WeakMap<Room, RoomCallbacks>();
+  /** 命令路由上下文缓存（避免每条命令都创建新对象） */
+  private readonly commandCtx: Parameters<typeof processClientCommand>[0];
+
+  /**
+   * 创建新会话实例
+   * @param opts - 会话选项
+   */
+  constructor(opts: { id: string; socket: net.Socket; state: ServerState; remoteIp?: string }) {
+    this.id = opts.id;
+    this.socket = opts.socket;
+    this.state = opts.state;
+    this.remoteIp = opts.remoteIp ?? opts.socket.remoteAddress ?? "unknown";
+
+    this.monitorBuffer = new MonitorBuffer({
+      flushIntervalMs: MONITOR_FLUSH_INTERVAL_MS,
+      broadcastFast: (ids, cmd) => this.broadcastToIdsFast(ids, cmd)
+    });
+
+    // 监听 socket 事件（使用具名回调以便在断线时正确移除，防止内存泄漏）
+    this.socket.on("close", this.onSocketClose);
+    this.socket.on("error", this.onSocketError);
+    this.socket.on("data", this.onSocketData);
+
+    activeSessions.add(this);
+    startGlobalHeartbeat();
+
+    const self = this;
+    this.commandCtx = {
+      get state() {
+        return self.state;
+      },
+      get user() {
+        return self.user!;
+      },
+      errToStr: (fn) => this.errToStr(fn),
+      requireRoom: (u) => this.requireRoom(u),
+      broadcastRoom: (room, c) => this.broadcastRoom(room, c, false) as Promise<void>,
+      broadcastRoomFast: (room, c) => {
+        this.broadcastRoom(room, c, true);
+      },
+      broadcastRoomMessage: (room, msg) => this.broadcastRoomMessage(room, msg),
+      monitorBuffer: this.monitorBuffer,
+      processCreateRoom: (u, id) => this.processCreateRoom(u, id),
+      processJoinRoom: (u, id, m) => this.processJoinRoom(u, id, m),
+      disbandRoom: (room) => this.disbandRoom(room),
+      checkRoomAllReady: (room) => this.checkRoomAllReady(room),
+      fetchChart: (u, id) => this.fetchChart(u, id),
+      fetchRecord: (u, id) => this.fetchRecord(u, id),
+      makeRoomCallbacks: (room) => this.makeRoomCallbacks(room)
+    };
+  }
+
+  /**
+   * 检查心跳超时
+   * @param now - 当前时间戳
+   */
+  checkHeartbeat(now: number): void {
+    if (this.lost) return;
+    if (now - this.lastRecv > HEARTBEAT_DISCONNECT_TIMEOUT_MS) {
+      this.state.logger.warn(
+        tl(this.state.serverLang, "log-heartbeat-timeout-disconnect", { id: this.id }),
+        { session: this.id },
+        { userId: this.user?.id }
+      );
+      void this.markLost();
+    }
+  }
+
+  private localizeMessage(lang: Language, msg: string): string {
+    try {
+      return lang.format(msg);
+    } catch {
+      return msg;
+    }
+  }
+
+  private localizeError(lang: Language, e: unknown): string {
+    const msg = e instanceof Error ? e.message : String(e);
+    return this.localizeMessage(lang, msg);
+  }
+
+  bindStream(stream: Stream<ServerCommand, ClientCommand>): void {
+    this.stream = stream;
+    this.protocolVersion = stream.version;
+  }
+
+  async trySend(cmd: ServerCommand): Promise<void> {
+    const stream = this.stream;
+    if (!stream) return;
+    try {
+      await stream.send(cmd);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.state.logger.debug(`[${this.id}] Send failed: ${msg}`, undefined, { userId: this.user?.id });
+      await this.markLost();
+    }
+  }
+
+  async trySendPrepared(prepared: PreparedServerCommand): Promise<void> {
+    const stream = this.stream;
+    if (!stream) return;
+    try {
+      await stream.sendFrame(prepared.frame, prepared.highPriority);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.state.logger.debug(`[${this.id}] Send failed: ${msg}`, undefined, { userId: this.user?.id });
+      await this.markLost();
+    }
+  }
+
+  /**
+   * 同步、无 Promise 的 fire-and-forget 发送（实时游戏数据广播热路径）
+   *
+   * 直接把预编码帧同步入队到底层 Stream 批量队列，不返回 Promise、不分配微任务，
+   * 用于「一条命令分发给 N 个观战者」的扇出场景以消除每接收者的 Promise 开销。
+   * 投递仍走与 trySendPrepared 相同的批量 flush 机制；连接断开/socket 错误由
+   * Stream 与 Session 的 socket 事件监听统一处理，这里无需 try/catch 与 markLost。
+   */
+  trySendPreparedFast(prepared: PreparedServerCommand): void {
+    this.stream?.enqueueFrame(prepared.frame, prepared.highPriority);
+  }
+
+  async onCommand(cmd: ClientCommand): Promise<void> {
+    this.lastRecv = Date.now();
+    if (this.panicked || this.lost) return;
+
+    if (cmd.type === "Ping") {
+      void this.trySend(PONG);
+      return;
+    }
+
+    if (this.waitingForAuthenticate) {
+      if (cmd.type !== "Authenticate") return;
+      const t0 = Session._profilerStart?.();
+      await this.handleAuthenticate(cmd.token);
+      Session._profilerEnd?.(t0 ?? 0, "auth");
+      return;
+    }
+
+    // 命令级限流：放行心跳与实时游戏数据（categorize 返回 null），挡下异常高频的
+    // 聊天 / 房间 / 触发上游 API 的命令。可由 COMMAND_RATE_LIMIT=false 关闭（如内网/比赛）。
+    if (this.state.config.command_rate_limit !== false) {
+      const category = categorize(cmd.type);
+      if (category && !this.commandRateLimiter.allow(category)) {
+        this.state.logger.debug(`[${this.id}] command rate-limited: ${cmd.type}`, undefined, {
+          userId: this.user?.id
+        });
+        const resp = this.rateLimitedResponse(cmd);
+        if (resp) await this.trySend(resp);
+        return;
+      }
+    }
+
+    const t0 = Session._profilerStart?.();
+    const resp = await this.process(cmd);
+    if (resp) await this.trySend(resp);
+    Session._profilerEnd?.(t0 ?? 0, cmd.type);
+  }
+
+  /**
+   * 为被限流的命令构造一条「操作过于频繁」的错误响应，避免客户端因收不到响应而挂起等待。
+   * 仅对「请求-响应」型命令（形如 `{ type, result }`）返回错误；其余返回 null（不回复）。
+   */
+  private rateLimitedResponse(cmd: ClientCommand): ServerCommand | null {
+    const lang = this.user?.lang ?? this.state.serverLang;
+    const message = this.localizeMessage(lang, "command-rate-limited");
+    switch (cmd.type) {
+      case "Chat":
+      case "CreateRoom":
+      case "JoinRoom":
+      case "LeaveRoom":
+      case "LockRoom":
+      case "CycleRoom":
+      case "SelectChart":
+      case "RequestStart":
+      case "Ready":
+      case "CancelReady":
+      case "Played":
+      case "Abort":
+        return { type: cmd.type, result: err(message) } as ServerCommand;
+      default:
+        return null;
+    }
+  }
+
+  /** Profiler hooks */
+  static _profilerStart: (() => number) | null = null;
+  static _profilerEnd: ((start: number, label: string) => void) | null = null;
+
+  private getPhiraApiEndpoint(): string {
+    return this.state.config.phira_api_endpoint || DEFAULT_PHIRA_API_ENDPOINT;
+  }
+
+  private async handleAuthenticate(token: string): Promise<void> {
+    let me: PhiraUserInfo | null = null;
+    let hitokoto: HitokotoValue | null = null;
+
+    try {
+      // 校验 token 合法性：长度需小于 32 字符，否则拒绝（在发起 API 请求前快速失败）
+      if (token.length > 32) throw new Error("auth-invalid-token");
+
+      // 并行发起 Phira API 认证和一言预热，减少总延迟
+      const results = await Promise.all([
+        fetchPhiraUserInfo({
+          endpoint: this.getPhiraApiEndpoint(),
+          token,
+          proxy: this.state.config.outbound_proxy
+        }),
+        getHitokotoCached(this.state.config.outbound_proxy, this.state.config.hitokoto_api_url).catch(() => null)
+      ]);
+      me = results[0];
+      hitokoto = results[1];
+    } catch (e) {
+      // API 阶段失败：尚无用户信息，使用服务端默认语言
+      const localized = this.localizeError(this.state.serverLang, e instanceof Error ? e : new Error("auth-failed"));
+      this.state.logger.warn(
+        tl(this.state.serverLang, "log-auth-failed", { id: this.id, reason: localized }),
+        undefined,
+        { ip: this.remoteIp, isConnectionLog: true }
+      );
+      await this.trySend({ type: "Authenticate", result: err(localized) });
+      this.panicked = true;
+      await this.markLost();
+      return;
+    }
+
+    try {
+      // 维护模式：拒绝新连接，但放行仍在线/挂起（dangling）的用户重连，让其能回到原房间完成对局
+      if (this.state.maintenance && !this.state.users.has(me.id)) {
+        const userLang = new Language(me.language);
+        const reason = this.state.maintenanceMessage?.trim() || userLang.format("server-maintenance");
+        this.state.logger.info(
+          tl(this.state.serverLang, "log-auth-rejected-maintenance", { user: me.name }),
+          undefined,
+          { ip: this.remoteIp, isConnectionLog: true }
+        );
+        await this.trySend({ type: "Authenticate", result: err(reason) });
+        this.panicked = true;
+        await this.markLost();
+        return;
+      }
+
+      // Don't reject banned users at auth time - allow them to connect
+      // They will be blocked from operations later
+
+      const { user, staleSession } = await this.state.mutex.runExclusive(async () => {
+        const existing = this.state.users.get(me.id);
+        if (existing) {
+          let staleSession: Session | null = null;
+          if (existing.session && existing.session !== this) {
+            staleSession = existing.session;
+            existing.setSession(null);
+          }
+          existing.setSession(this);
+          return { user: existing, staleSession };
+        }
+        const created = new User({ id: me.id, name: me.name, language: me.language, server: this.state });
+        created.setSession(this);
+        this.state.users.set(me.id, created);
+        return { user: created, staleSession: null };
+      });
+
+      this.user = user;
+      if (staleSession) void staleSession.adminDisconnect({ preserveRoom: true });
+
+      // Check if user is banned - 优化：不需要mutex，直接读取Set
+      const isBanned = this.state.bannedUsers.has(user.id);
+      if (isBanned && user.room) {
+        await this.handleUserLeaveRoom(user, user.room);
+      }
+
+      const reconnectRoom = user.room;
+      const roomState: ClientRoomState | null = reconnectRoom
+        ? reconnectRoom.clientState(user, (id) => this.state.users.get(id))
+        : null;
+
+      // 断线重连修正：若房间处于 WaitForReady，客户端需先经过 SelectChart 载入谱面上下文，
+      // 否则会因缺少谱面进入异常状态。先在响应中伪装成 SelectChart，再延迟换回 WaitingForReady。
+      // 其他状态（SelectChart / Playing）正常发：Playing 重连时客户端本地仍保有谱面。
+      let restoreWaitForReadyChartId: number | null = null;
+      if (roomState && reconnectRoom && reconnectRoom.state.type === "WaitForReady" && reconnectRoom.chart) {
+        restoreWaitForReadyChartId = reconnectRoom.chart.id;
+        roomState.state = { type: "SelectChart", id: reconnectRoom.chart.id };
+      }
+
+      await this.trySend({ type: "Authenticate", result: ok([user.toInfo(), roomState]) });
+
+      if (restoreWaitForReadyChartId !== null) {
+        const chartId = restoreWaitForReadyChartId;
+        setTimeout(() => {
+          void user.trySend({ type: "ChangeState", state: { type: "SelectChart", id: chartId } });
+          setTimeout(() => {
+            void user.trySend({ type: "ChangeState", state: { type: "WaitingForReady" } });
+          }, 20);
+        }, 20);
+      }
+
+      this.waitingForAuthenticate = false;
+
+      const monitorSuffix = user.monitor ? tl(this.state.serverLang, "label-monitor-suffix") : "";
+      this.state.logger.debug(
+        tl(this.state.serverLang, "log-auth-ok", {
+          id: this.id,
+          user: user.name,
+          monitorSuffix,
+          version: String(this.protocolVersion ?? "?")
+        }),
+        undefined,
+        { userId: user.id, isConnectionLog: true }
+      );
+
+      this.state.logger.info(
+        tl(this.state.serverLang, "log-player-join", {
+          user: user.name,
+          id: String(user.id),
+          monitorSuffix
+        }),
+        undefined,
+        { userId: user.id, isConnectionLog: true }
+      );
+
+      void sendWelcomeExtras({
+        user,
+        state: this.state,
+        sendSystemChat: (content) => this.sendSystemChat(content),
+        hitokoto
+      }).catch(NOOP);
+    } catch (e) {
+      // 认证后阶段失败：已有用户信息，使用玩家 API 返回的语言
+      const userLang = me ? new Language(me.language) : this.state.serverLang;
+      const localized = this.localizeError(userLang, e instanceof Error ? e : new Error("auth-failed"));
+      this.state.logger.warn(
+        tl(this.state.serverLang, "log-auth-failed", { id: this.id, reason: localized }),
+        undefined,
+        { ip: this.remoteIp, isConnectionLog: true }
+      );
+      await this.trySend({ type: "Authenticate", result: err(localized) });
+
+      this.panicked = true;
+      await this.markLost();
+    }
+  }
+
+  private async sendSystemChat(content: string): Promise<void> {
+    await this.trySend({ type: "Message", message: { type: "Chat", user: 0, content } });
+  }
+
+  private async checkAndHandleBan(user: User): Promise<boolean> {
+    // 优化：直接读取Set，不需要mutex
+    const isBanned = this.state.bannedUsers.has(user.id);
+    if (isBanned) {
+      await this.sendSystemChat(user.lang.format("user-banned-by-server"));
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * 处理游戏结束，触发回放录制结束和自动上传
+   */
+  private async handleGameEnd(room: Room): Promise<void> {
+    // 结束回放录制
+    await this.state.replayRecorder.endRoom(room.id);
+
+    // 触发自动上传（如果启用）
+    if (this.state.autoUploadCallback && room.chart && room.state.type === "Playing") {
+      const chartId = room.chart.id;
+      const results = room.state.results;
+
+      // 获取房间的文件信息
+      const roomFiles = this.state.replayRecorder.listRoomFiles(room.id);
+
+      for (const [userId, recordData] of results.entries()) {
+        // 查找该用户的回放文件
+        const userFile = roomFiles.find((f) => f.userId === userId);
+        if (userFile) {
+          // 触发自动上传（延迟30秒由回调内部处理）
+          this.state.autoUploadCallback(userId, chartId, userFile.timestamp, recordData.id);
+        }
+      }
+    }
+
+    // 清理已完成回放文件记录，防止已解散房间的元数据泄漏
+    this.state.replayRecorder.clearRoomFiles(room.id);
+  }
+
+  private async startReplayRecording(room: Room): Promise<void> {
+    if (!this.state.replayEnabled || !room.replayEligible || !room.chart) return;
+    const users = room.userIds().map((id) => ({ id, name: this.state.users.get(id)?.name ?? String(id) }));
+    await this.state.replayRecorder.startRoom(room.id, room.chart, users);
+  }
+
+  private async markLost(): Promise<void> {
+    if (this.lost) return;
+    this.lost = true;
+    activeSessions.delete(this);
+    this.monitorBuffer.destroy();
+
+    // 移除 socket 事件监听器，防止 socket 通过闭包长期引用 Session 导致内存泄漏
+    this.socket.off("close", this.onSocketClose);
+    this.socket.off("error", this.onSocketError);
+    this.socket.off("data", this.onSocketData);
+
+    const stream = this.stream;
+    if (stream) stream.close();
+
+    const user = this.user;
+    if (!user) {
+      await this.state.mutex.runExclusive(async () => {
+        this.state.sessions.delete(this.id);
+      });
+      this.state.logger.debug(tl(this.state.serverLang, "log-disconnect", { id: this.id, who: "" }), undefined, {
+        isConnectionLog: true
+      });
+      return;
+    }
+
+    let detachedUserSession = false;
+    await this.state.mutex.runExclusive(async () => {
+      this.state.sessions.delete(this.id);
+      if (user.session === this) {
+        user.setSession(null);
+        detachedUserSession = true;
+      }
+    });
+
+    const who = tl(this.state.serverLang, "log-disconnect-user", { user: user.name });
+    this.state.logger.debug(tl(this.state.serverLang, "log-disconnect", { id: this.id, who }), undefined, {
+      userId: user.id,
+      isConnectionLog: true
+    });
+
+    if (detachedUserSession && !this.preserveRoomOnLost && user.session === null) await this.dangleUser(user);
+  }
+
+  async adminDisconnect(opts: { preserveRoom: boolean }): Promise<void> {
+    if (opts.preserveRoom) this.preserveRoomOnLost = true;
+    await this.markLost();
+  }
+
+  private async dangleUser(user: User): Promise<void> {
+    const room = user.room;
+
+    // 被封禁用户：不等待重连，直接移除（无论是否在对局中）
+    // 优化：直接读取 Set，不需要 mutex
+    if (this.state.bannedUsers.has(user.id)) {
+      this.state.logger.info(tl(this.state.serverLang, "log-user-dangle", { user: user.name }), undefined, {
+        userId: user.id
+      });
+      await this.state.mutex.runExclusive(async () => {
+        this.state.users.delete(user.id);
+      });
+      // 清理用户相关内存数据，防止泄漏
+      this.state.cleanupUserData(user.id);
+      if (room) {
+        await this.handleUserLeaveRoom(user, room);
+      }
+      return;
+    }
+
+    // 对局（Playing）进行中断线：默认给一段重连宽限（移动端弱网/切后台友好），
+    // 期间该玩家仍占位、其他已完成玩家在结算前等待；超时未回则由 dangle 扫掠移除并结算本局。
+    // 配置 PLAYING_RECONNECT_GRACE=0 时关闭宽限，保持旧行为——立即判定离开本局。
+    if (room?.state.type === "Playing") {
+      const graceSec = this.state.config.playing_reconnect_grace ?? DEFAULT_PLAYING_RECONNECT_GRACE_SEC;
+      if (graceSec <= 0) {
+        logRoomWarn(
+          this.state.logger,
+          this.state.serverLang,
+          room.id,
+          "log-user-disconnect-playing",
+          { user: user.name },
+          { userId: user.id }
+        );
+        await this.state.mutex.runExclusive(async () => {
+          this.state.users.delete(user.id);
+        });
+        // 清理用户相关内存数据，防止泄漏
+        this.state.cleanupUserData(user.id);
+        await this.handleUserLeaveRoom(user, room);
+        return;
+      }
+      this.dangleWithWindow(user, graceSec * 1000);
+      // 立即检查：若其他玩家此刻都已完成，仅剩这名挂起玩家，则广播等待重连提示
+      await this.checkRoomAllReady(room);
+      return;
+    }
+
+    // 非对局态断线：保留房间的常规 dangle 窗口
+    this.dangleWithWindow(user, DANGLE_WINDOW_MS);
+  }
+
+  /** 把用户标记为 dangling 并登记到统一扫掠定时器，windowMs 后未重连则移除 */
+  private dangleWithWindow(user: User, windowMs: number): void {
+    this.state.logger.info(tl(this.state.serverLang, "log-user-dangle", { user: user.name }), undefined, {
+      userId: user.id
+    });
+    const token = user.markDangle();
+    const deadline = Date.now() + windowMs;
+    user.dangleDeadline = deadline;
+    dangleTimeouts.set(user.id, { user, token, deadline, state: this.state });
+    startDangleSweepIfNeeded();
+  }
+
+  private async handleUserLeaveRoom(user: User, room: Room): Promise<void> {
+    const shouldDrop = await room.onUserLeave({ user, ...this.makeRoomCallbacks(room) });
+    if (shouldDrop) {
+      logRoomInfo(this.state.logger, this.state.serverLang, room.id, "log-room-recycled", undefined, {
+        userId: user.id
+      });
+      await this.state.mutex.runExclusive(async () => {
+        this.state.rooms.delete(room.id);
+      });
+    } else {
+      refreshRoomLiveState(room, this.state.replayEnabled);
+    }
+  }
+
+  private errToStr<T>(fn: () => Promise<T>): Promise<StringResult<T>> {
+    const user = this.user;
+    const lang = user?.lang ?? this.state.serverLang;
+    return fn()
+      .then(ok)
+      .catch((e) => err(this.localizeError(lang, e)));
+  }
+
+  private async processCreateRoom(user: User, id: string): Promise<Record<never, never>> {
+    if (await this.checkAndHandleBan(user)) throw new Error(user.lang.format("user-banned-by-server"));
+    if (this.state.maintenance) throw new Error(user.lang.format("server-maintenance"));
+    if (!this.state.roomCreationEnabled) throw new Error(user.lang.format("room-creation-disabled"));
+    if (user.room) throw new Error(user.lang.format("room-already-in-room"));
+    const roomId = parseRoomId(id);
+    await this.state.mutex.runExclusive(async () => {
+      if (this.state.rooms.has(roomId)) throw new Error(user.lang.format("create-id-occupied"));
+      const maxRooms = this.state.config.max_rooms;
+      if (typeof maxRooms === "number" && maxRooms >= 1 && this.state.rooms.size >= maxRooms) {
+        throw new Error(user.lang.format("rooms-limit-reached"));
+      }
+      const maxUsersRaw = this.state.config.room_max_users;
+      const maxUsers =
+        typeof maxUsersRaw === "number" && Number.isInteger(maxUsersRaw) ? Math.min(Math.max(maxUsersRaw, 1), 64) : 8;
+      const room = new RoomClass({ id: roomId, hostId: user.id, maxUsers, replayEligible: this.state.replayEnabled });
+      this.state.rooms.set(roomId, room);
+      user.room = room;
+    });
+    const room = user.room!;
+    refreshRoomLiveState(room, this.state.replayEnabled);
+    logRoomMark(
+      this.state.logger,
+      this.state.serverLang,
+      room.id,
+      "log-room-created",
+      { user: user.name },
+      { userId: user.id }
+    );
+    await this.broadcastRoomMessage(room, { type: "CreateRoom", user: user.id });
+    this.sendFakeMonitorJoin(user, room);
+    return {};
+  }
+
+  private async processJoinRoom(user: User, roomIdStr: string, monitor: boolean): Promise<JoinRoomResponse> {
+    if (await this.checkAndHandleBan(user)) throw new Error(user.lang.format("user-banned-by-server"));
+    if (this.state.maintenance) throw new Error(user.lang.format("server-maintenance"));
+    if (user.room) throw new Error(user.lang.format("room-already-in-room"));
+
+    const roomId = parseRoomId(roomIdStr);
+
+    // 优化：先检查房间封禁，不需要mutex
+    const bannedInRoom = (() => {
+      const set = this.state.bannedRoomUsers.get(roomId);
+      return set ? set.has(user.id) : false;
+    })();
+    if (bannedInRoom) throw new Error(user.lang.format("room-banned", { id: String(roomId) }));
+
+    // 优化：获取房间也不需要mutex（读操作）
+    const room = this.state.rooms.get(roomId) ?? null;
+    if (!room) throw new Error(user.lang.format("room-not-found"));
+
+    room.validateJoin(user, monitor);
+    const okJoin = room.addUser(user, monitor);
+    if (!okJoin) throw new Error(user.lang.format("join-room-full"));
+
+    user.monitor = monitor;
+    user.room = room; // 直接设置，不需要mutex
+    room.handleJoin(user);
+    refreshRoomLiveState(room, this.state.replayEnabled);
+
+    const suffix = monitor ? tl(this.state.serverLang, "label-monitor-suffix") : "";
+    logRoomMark(
+      this.state.logger,
+      this.state.serverLang,
+      room.id,
+      "log-room-joined",
+      { user: user.name, suffix },
+      { userId: user.id }
+    );
+    await this.broadcastRoom(room, { type: "OnJoinRoom", info: user.toInfo() });
+    await this.broadcastRoomMessage(room, { type: "JoinRoom", user: user.id, name: user.name });
+
+    const userList: UserInfo[] = [];
+    for (const id of room.allParticipantIds()) {
+      const u = this.state.users.get(id);
+      if (u) userList.push(u.toInfo());
+    }
+
+    let respState = room.clientRoomState();
+    // ProtocolHack：如果当前不是选谱状态但已有谱面，响应中伪装成 SelectChart 让客户端先获知谱面 ID
+    if (room.state.type !== "SelectChart" && room.chart) {
+      respState = { type: "SelectChart", id: room.chart.id };
+    }
+
+    const resp: JoinRoomResponse = {
+      state: respState,
+      users: userList,
+      live: room.isLive()
+    };
+
+    // 延迟修正客户端状态：先再次确认 SelectChart，再发送真实状态（如 Playing）
+    if (room.state.type !== "SelectChart" && room.chart) {
+      const chartId = room.chart.id;
+      const realState = room.clientRoomState();
+      setTimeout(() => {
+        void user.trySend({ type: "ChangeState", state: { type: "SelectChart", id: chartId } });
+        setTimeout(() => {
+          void user.trySend({ type: "ChangeState", state: realState });
+        }, 2);
+      }, 2);
+    }
+
+    // 同步 cycle/lock 状态：JoinRoomResponse 不携带这两个字段，需延迟补发 Message，
+    // 否则客户端显示会有偏差（cycle 不发会有显示上的小毛病；lock 默认 false，仅在锁定时补发）。
+    const syncCycle = room.isCycle();
+    const syncLock = room.isLocked();
+    if (syncCycle || syncLock) {
+      setTimeout(() => {
+        if (syncCycle) void user.trySend({ type: "Message", message: { type: "CycleRoom", cycle: true } });
+        if (syncLock) void user.trySend({ type: "Message", message: { type: "LockRoom", lock: true } });
+      }, 20);
+    }
+
+    this.sendFakeMonitorJoin(user, room);
+
+    return resp;
+  }
+
+  private sendFakeMonitorJoin(targetUser: User, room: Room): void {
+    if (!this.state.replayEnabled || !room.replayEligible) return;
+    const fake = this.state.replayRecorder.fakeMonitorInfo(this.state.serverLang);
+    setImmediate(() => {
+      void (async () => {
+        if (!targetUser.room || targetUser.room.id !== room.id) return;
+        await targetUser.trySend({ type: "OnJoinRoom", info: fake });
+        await targetUser.trySend({ type: "Message", message: { type: "JoinRoom", user: fake.id, name: fake.name } });
+      })();
+    });
+  }
+
+  private async process(cmd: ClientCommand): Promise<ServerCommand | null> {
+    if (!this.user) return null;
+    return processClientCommand(this.commandCtx, cmd);
+  }
+
+  private requireRoom(user: User): Room {
+    const room = user.room;
+    if (!room) throw new Error(user.lang.format("room-no-room"));
+    return room;
+  }
+
+  private async broadcastToIds(ids: number[], cmd: ServerCommand): Promise<void> {
+    const prepared = prepareServerCommand(cmd);
+    const tasks: Promise<void>[] = [];
+    for (const id of ids) {
+      const u = this.state.users.get(id);
+      const session = u?.session;
+      if (session) tasks.push(session.trySendPrepared(prepared));
+    }
+    if (tasks.length > 0) await Promise.allSettled(tasks);
+  }
+
+  /**
+   * 快速广播：fire-and-forget，不等待发送完成
+   * 用于实时游戏数据（Touches/Judges），避免慢客户端拖累全场
+   */
+  private broadcastToIdsFast(ids: number[], cmd: ServerCommand): void {
+    const prepared = prepareServerCommand(cmd);
+    for (const id of ids) {
+      const u = this.state.users.get(id);
+      const session = u?.session;
+      if (session) session.trySendPreparedFast(prepared);
+    }
+  }
+
+  private broadcastRoom(room: Room, cmd: ServerCommand, fireAndForget = false): Promise<void> | void {
+    if (fireAndForget) {
+      this.broadcastToIdsFast(room.allParticipantIds(), cmd);
+      return;
+    }
+    return this.broadcastToIds(room.allParticipantIds(), cmd);
+  }
+
+  /**
+   * 观战数据广播：使用 fire-and-forget，避免慢观战客户端拖累实时数据流
+   */
+  private broadcastRoomMonitors(room: Room, cmd: ServerCommand): void {
+    this.broadcastToIdsFast(room.monitorIds(), cmd);
+  }
+
+  /**
+   * 简化 room.send 调用：自动使用 broadcastRoom 和 state.users.get
+   */
+  private broadcastRoomMessage(room: Room, msg: Parameters<Room["send"]>[1]): Promise<void> {
+    return room.send(
+      (c) => this.broadcastRoom(room, c, false) as Promise<void>,
+      msg,
+      (id) => this.state.users.get(id),
+      this.state.serverLang
+    );
+  }
+
+  private makeRoomCallbacks(room: Room): RoomCallbacks {
+    let callbacks = this.roomCallbacksCache.get(room);
+    if (!callbacks) {
+      callbacks = {
+        usersById: (id: number) => this.state.users.get(id),
+        broadcast: (c: ServerCommand) => this.broadcastRoom(room, c, false) as Promise<void>,
+        broadcastToMonitors: (c: ServerCommand) => this.broadcastRoomMonitors(room, c),
+        pickRandomUserId: (ids: number[]) => pickRandom(ids),
+        lang: this.state.serverLang,
+        logger: this.state.logger,
+        wsService: this.state.wsService,
+        onEnterPlaying: async (r: Room) => {
+          if (!r.chart) return;
+          await this.startReplayRecording(r);
+        },
+        onGameEnd: async (r: Room) => {
+          await this.handleGameEnd(r);
+        }
+      };
+      this.roomCallbacksCache.set(room, callbacks);
+    }
+    return callbacks;
+  }
+
+  /**
+   * 简化 checkAllReady 调用
+   */
+  private async checkRoomAllReady(room: Room): Promise<void> {
+    await room.checkAllReady({ ...this.makeRoomCallbacks(room), disbandRoom: (r: Room) => this.disbandRoom(r) });
+  }
+
+  private async disbandRoom(room: Room): Promise<void> {
+    const ids = room.allParticipantIds();
+    const baseOpts = this.makeRoomCallbacks(room);
+    const leavePromises: Promise<boolean>[] = [];
+    for (const id of ids) {
+      const u = this.state.users.get(id);
+      if (!u) continue;
+      if (!u.room || u.room.id !== room.id) continue;
+      leavePromises.push(room.onUserLeave({ user: u, ...baseOpts }));
+    }
+    await Promise.allSettled(leavePromises);
+    await this.state.mutex.runExclusive(async () => {
+      this.state.rooms.delete(room.id);
+    });
+    logRoomInfo(this.state.logger, this.state.serverLang, room.id, "log-room-recycled", undefined, {
+      userId: this.user?.id
+    });
+  }
+
+  private async fetchChart(user: User, id: number): Promise<Chart> {
+    // 热路径优化：优先使用同步缓存读取，避免 microtask 开销
+    let cached = chartCache.getSync(id);
+    if (cached) return cached;
+    cached = await chartCache.get(id);
+    if (cached) return cached;
+
+    const chart = await fetchPhiraChart({
+      endpoint: this.getPhiraApiEndpoint(),
+      id,
+      proxy: this.state.config.outbound_proxy,
+      errorFactory: () => new Error(user.lang.format("chart-fetch-failed"))
+    });
+    await chartCache.set(id, chart);
+    return chart;
+  }
+
+  private async fetchRecord(user: User, id: number): Promise<RecordData> {
+    const cached = await recordCache.get(id);
+    if (cached) return cached;
+
+    const record = await fetchPhiraRecord({
+      endpoint: this.getPhiraApiEndpoint(),
+      id,
+      proxy: this.state.config.outbound_proxy,
+      errorFactory: () => new Error(user.lang.format("record-fetch-failed"))
+    });
+    await recordCache.set(id, record);
+    return record;
+  }
+}

@@ -4,5 +4,49 @@ logs/
 dist-bundle/
 dist-sea/
 release/
+
+# 生成产物：locales.json 由 ftl 合并而来（构建 / 在线拉取产物），不入库、不进源码 locales/
+locales.json
+locales/locales.json
+
+package-lock.json
+
+# 用户插件（保留示例插件）
+plugins/*
+!plugins/README.md
+!plugins/virtualRoom.js
+
+# IDE
 .trae/
+.kiro/
+.vscode/
+.claude/
+.codebuddy/
+.idea/
+
+# 系统
+.DS_Store
+Thumbs.db
+$RECYCLE.BIN/
+
+# 临时文件
+data/*
+
+# 录制文件（运行时或测试残留）
+record/
+record-*/
+
+# 压测结果（运行时生成）
+bench-results/
+performance-report.md
+
+# 压测临时文档
+docs/bench-dev/
+# 服务端运行时日志
+server.log
+
+# 本地配置文件（示例见 server_config.example.yml）
+server_config.yml
+
+# 本地环境变量文件
 .env
