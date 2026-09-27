@@ -16,6 +16,7 @@ import type { Chart, RecordData } from "../core/types.js";
 import type { User } from "../game/user.js";
 import type { Logger } from "../utils/logger.js";
 import { logRoomInfo } from "../utils/logUtils.js";
+import { formatAccuracyRanking } from "./roomUtils.js";
 
 const ROOM_STATE_WAITING: RoomState = Object.freeze({ type: "WaitingForReady" });
 const ROOM_STATE_PLAYING: RoomState = Object.freeze({ type: "Playing" });
@@ -472,7 +473,11 @@ export class Room {
           id: String(bestStdIds[0]!),
           std: String(bestStdMs)
         });
-        const summary = tl(opts.lang, "chat-game-summary", { scoreText, accText, stdText });
+
+        // 准度排行：按准确率降序，并列同名次；最多展示前若干名，避免人多时消息过长
+        const rankText = formatAccuracyRanking(results, opts.lang, opts.usersById);
+
+        const summary = tl(opts.lang, "chat-game-summary", { scoreText, accText, stdText, rankText });
 
         await this.send(opts.broadcast, { type: "Chat", user: 0, content: summary }, undefined, opts.lang);
       }

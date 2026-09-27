@@ -47,6 +47,8 @@ export async function sendWelcomeExtras(opts: {
     // 站点与群组信息(替代此前的"一言"展示)
     parts.push(sep);
     parts.push(lang.format("see-our-web") + "\n");
+    // 域名迁移公告：旧域名仍可用，此处仅提示后续变更
+    parts.push(lang.format("see-our-web-migration") + "\n");
     parts.push(sep);
     parts.push(lang.format("chat-group-0") + "\n");
     parts.push(lang.format("chat-group-1") + "\n");

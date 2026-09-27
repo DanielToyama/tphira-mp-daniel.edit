@@ -54,6 +54,7 @@ chat-roomlist-item = { $id } ({ $count }/{ $max })
 chat-disabled-by-server = Chat is disabled on this server to avoid safety issues.
 
 see-our-web = >Click iphira.danieltoyama.fun to get fastest info!<
+see-our-web-migration = >Notice: our domain will soon change to phira.danieluu.top, and the status page to https://iphira.danieluu.top/<
 chat-group-0 = Join us QQ Group Chat with us！
 chat-group-1 = Group①：655504577
 chat-group-2 = Group②：832068553
@@ -63,9 +64,13 @@ chat-game-summary =
     { $scoreText }
     { $accText }
     { $stdText }
+    { $rankText }
 chat-game-summary-score = Best score: "{ $name } "({ $id }) { $score }
 chat-game-summary-acc = Best accuracy: "{ $name } "({ $id }) { $acc }
 chat-game-summary-std = Best std: "{ $name } "({ $id }) { $std }ms
+chat-game-summary-rank-title = Accuracy ranking ({ $total } players):
+chat-game-summary-rank-item = { $rank }. { $name } ({ $id }) { $acc }
+chat-game-summary-rank-more = ... and { $rest } more player(s) not shown
 
 auth-invalid-token = Invalid token
 auth-fetch-me-failed = Failed to fetch user info

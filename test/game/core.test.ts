@@ -49,11 +49,15 @@ describe("核心功能", () => {
         return (
           bobChat.some((s) => s.includes("当前可用的房间如下：")) &&
           bobChat.some((s) => s.includes("群：123456")) &&
-          bobChat.some((s) => s.includes("iphira.danieltoyama.fun"))
+          bobChat.some((s) => s.includes("iphira.danieltoyama.fun")) &&
+          bobChat.some((s) => s.includes("iphira.danieluu.top"))
         );
       }, 1500);
 
       expect(bobChat.join("\n")).toContain("iphira.danieltoyama.fun");
+      // 域名迁移公告：新域名与状态站都要出现在欢迎信息里
+      expect(bobChat.join("\n")).toContain("phira.danieluu.top");
+      expect(bobChat.join("\n")).toContain("https://iphira.danieluu.top/");
       expect(bobChat.join("\n")).toContain("655504577");
       expect(bobChat.join("\n")).toContain("当前可用的房间如下：");
       expect(bobChat.join("\n")).toContain("room1（1/8）");
@@ -85,8 +89,16 @@ describe("核心功能", () => {
           .filter((m) => m.type === "Chat" && m.user === 0)
           .map((m) => (m as any).content as string);
         endChats.push(...batch);
-        return endChats.some((s) => s.includes("本局结算：") && s.includes("无瑕度") && s.includes("0ms"));
+        return endChats.some(
+          (s) => s.includes("本局结算：") && s.includes("无瑕度") && s.includes("0ms") && s.includes("准度排行")
+        );
       }, 1500);
+
+      // 结算消息里应含准度排行，且列出唯一提交成绩的玩家
+      const summaryText = endChats.find((s) => s.includes("准度排行"))!;
+      expect(summaryText).toContain("本局结算：");
+      expect(summaryText).toContain("1. Alice");
+      expect(summaryText).toContain("100.00%");
     } finally {
       await alice.close();
       await bob.close();

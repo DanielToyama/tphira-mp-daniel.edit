@@ -54,6 +54,7 @@ chat-roomlist-item = { $id }（{ $count }/{ $max }）
 chat-disabled-by-server = 安全上の問題を避けるため、このサーバーではチャットが無効になっています。
 
 see-our-web = >iphira.danieltoyama.fun でサーバーの最新情報をチェック！<
+see-our-web-migration = >お知らせ：今後、当サイトのドメインは phira.danieluu.top に、ステータスサイトは https://iphira.danieluu.top/ に全面変更されます<
 chat-group-0 = QQグループに参加して一緒にチャットしましょう！
 chat-group-1 = グループ①：655504577
 chat-group-2 = グループ②：832068553
@@ -63,9 +64,13 @@ chat-game-summary =
     { $scoreText }
     { $accText }
     { $stdText }
+    { $rankText }
 chat-game-summary-score = 最高スコア：「{ $name } 」({ $id }) { $score }
 chat-game-summary-acc = 最高精度：「{ $name } 」({ $id }) { $acc }
 chat-game-summary-std = 最高安定度：「{ $name } 」({ $id }) { $std }ms
+chat-game-summary-rank-title = 精度ランキング（全 { $total } 人）：
+chat-game-summary-rank-item = { $rank }. { $name }（{ $id }） { $acc }
+chat-game-summary-rank-more = …… 他 { $rest } 名は非表示
 
 auth-invalid-token = トークンが不正です
 auth-fetch-me-failed = ユーザー情報の取得に失敗しました

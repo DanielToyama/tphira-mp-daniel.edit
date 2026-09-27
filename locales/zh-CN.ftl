@@ -54,6 +54,7 @@ chat-roomlist-item = { $id }（{ $count }/{ $max }）
 chat-disabled-by-server = 为避免安全问题，该服务器已禁用聊天
 
 see-our-web = >访问iphira.danieltoyama.fun实时获取我们的服务器动态！<
+see-our-web-migration = >公告：后续本站域名将全面更换为 phira.danieluu.top，状态站更换为 https://iphira.danieluu.top/<
 chat-group-0 = 来加入我们的群组一起聊天吧！
 chat-group-1 = 群①：655504577
 chat-group-2 = 群②：832068553
@@ -63,9 +64,13 @@ chat-game-summary =
     { $scoreText }
     { $accText }
     { $stdText }
+    { $rankText }
 chat-game-summary-score = 最高分：“{ $name } ”({ $id }) { $score }
 chat-game-summary-acc = 最高准度：“{ $name } ”({ $id }) { $acc }
 chat-game-summary-std = 最佳无瑕度：“{ $name } ”({ $id }) { $std }ms
+chat-game-summary-rank-title = 准度排行（共 { $total } 人）：
+chat-game-summary-rank-item = { $rank }. { $name }（{ $id }） { $acc }
+chat-game-summary-rank-more = …… 另有 { $rest } 名玩家未显示
 
 auth-invalid-token = token 不合法
 auth-fetch-me-failed = 获取用户信息失败

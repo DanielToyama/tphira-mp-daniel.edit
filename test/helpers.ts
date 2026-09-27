@@ -147,6 +147,14 @@ function decodeJudgeEvent(r: BinaryReader): JudgeEvent {
 export function setupMockFetch() {
   const originalFetch = globalThis.fetch;
   let hitokotoCalls = 0;
+  /**
+   * 按 record id 覆盖成绩字段，用于验证结算排行等依赖真实准确率/分数差异的逻辑。
+   * 默认为空，此时行为与既有测试完全一致（player 按 token 推断 / accuracy 1.0 / score 999999）。
+   *
+   * 注意：服务端拉取 /record/:id 时不带 Authorization 头，因此 mock 无法从 token 推断玩家；
+   * 需要让 100/200 以外的玩家提交成绩时，必须用 player 显式指定归属。
+   */
+  const recordOverrides = new Map<number, { accuracy?: number; score?: number; player?: number }>();
 
   const mockFetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
@@ -207,14 +215,14 @@ export function setupMockFetch() {
       return new Response(
         JSON.stringify({
           id,
-          player: id === 2 ? 200 : (playerMap[token] ?? 100),
-          score: 999999,
+          player: recordOverrides.get(id)?.player ?? (id === 2 ? 200 : (playerMap[token] ?? 100)),
+          score: recordOverrides.get(id)?.score ?? 999999,
           perfect: 1,
           good: 0,
           bad: 0,
           miss: 0,
           max_combo: 1,
-          accuracy: 1.0,
+          accuracy: recordOverrides.get(id)?.accuracy ?? 1.0,
           full_combo: true,
           std: 0,
           std_score: 0
@@ -232,6 +240,16 @@ export function setupMockFetch() {
     getHitokotoCalls: () => hitokotoCalls,
     resetHitokotoCalls: () => {
       hitokotoCalls = 0;
+    },
+    /**
+     * 覆盖指定 record id 的 player / accuracy / score。
+     * 多个玩家各自上传不同成绩时，用于构造可预测的结算排行榜。
+     */
+    setRecordOverride: (id: number, override: { player?: number; accuracy?: number; score?: number }) => {
+      recordOverrides.set(id, override);
+    },
+    resetRecordOverrides: () => {
+      recordOverrides.clear();
     }
   };
 }
