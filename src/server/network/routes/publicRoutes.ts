@@ -32,6 +32,9 @@ export async function tryHandlePublicRoutes(ctx: RequestContext): Promise<boolea
       state: "select_chart" | "waiting_for_ready" | "playing";
       chart: { name: string; id: string } | null;
       players: Array<{ name: string; id: number }>;
+      /** 房间人数上限。官方 tphira-mp 格式没有此字段，这里是附加字段，
+       *  官方客户端会忽略未知字段，不影响兼容性；自有前端用它显示真实上限。 */
+      max_users: number;
     }> = [];
 
     let total = 0;
@@ -64,7 +67,8 @@ export async function tryHandlePublicRoutes(ctx: RequestContext): Promise<boolea
         host: { name: hostName, id: String(room.hostId) },
         state: stateStr,
         chart,
-        players
+        players,
+        max_users: room.maxUsers
       });
     }
 

@@ -54,6 +54,7 @@ chat-roomlist-item = { $id } ({ $count }/{ $max })
 chat-disabled-by-server = Чат отключён на этом сервере во избежание проблем с безопасностью.
 
 see-our-web = >Заходите на iphira.danieluu.top, чтобы проверить состояние сервера!<
+see-our-web-advanced = >Расширенный статус, просмотр реплеев и другое — на tphira.danieluu.top!<
 see-our-web-migration-0 = >Объявление: адрес сервера изменится на phira.danieluu.top:26638, пожалуйста, переключитесь заранее!<
 see-our-web-migration-1 = >Было phira.danieltoyama.fun:26638=>phira.danieluu.top:26638<
 chat-group-0 = Присоединяйтесь к нашей группе QQ и общайтесь с нами!

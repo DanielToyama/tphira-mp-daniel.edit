@@ -54,6 +54,7 @@ chat-roomlist-item = { $id } ({ $count }/{ $max })
 chat-disabled-by-server = Chat is disabled on this server to avoid safety issues.
 
 see-our-web = >Visit iphira.danieluu.top to check server status!<
+see-our-web-advanced = >For advanced status, replay viewing and more, visit tphira.danieluu.top!<
 see-our-web-migration-0 = >Notice: the server address will change to phira.danieluu.top:26638, please switch in time!<
 see-our-web-migration-1 = >Old phira.danieltoyama.fun:26638=>phira.danieluu.top:26638<
 chat-group-0 = Join us QQ Group Chat with us！

@@ -58,6 +58,8 @@ export type RoomUpdateData = {
   users: Array<{ id: number; name: string; is_ready: boolean }>;
   monitors: Array<{ id: number; name: string }>;
   recent_logs: Array<{ message: string; timestamp: number }>;
+  /** 房间人数上限（附加字段，供自有前端显示真实值） */
+  max_users: number;
 };
 
 function toStateString(room: Room): "select_chart" | "waiting_for_ready" | "playing" {
@@ -178,6 +180,7 @@ export function buildRoomUpdateData(state: ServerState, rid: RoomId): RoomUpdate
     host: { id: room.hostId, name: hostName },
     users,
     monitors,
-    recent_logs: room.getRecentLogs()
+    recent_logs: room.getRecentLogs(),
+    max_users: room.maxUsers
   };
 }

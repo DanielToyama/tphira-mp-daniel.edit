@@ -54,6 +54,7 @@ chat-roomlist-item = { $id }（{ $count }/{ $max }）
 chat-disabled-by-server = 為避免安全問題，該伺服器已停用聊天
 
 see-our-web = >前往 iphira.danieluu.top 取得伺服器狀態！<
+see-our-web-advanced = >進階狀態、回放查看等功能可前往 tphira.danieluu.top 查看！<
 see-our-web-migration-0 = >公告伺服器位址即將更換為 phira.danieluu.top:26638，請及時更換！<
 see-our-web-migration-1 = >原 phira.danieltoyama.fun:26638=>phira.danieluu.top:26638<
 chat-group-0 = 來加入我們的群組一起聊天吧！
