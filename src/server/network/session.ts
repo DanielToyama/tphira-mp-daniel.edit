@@ -47,6 +47,13 @@ import { prepareServerCommand, type PreparedServerCommand } from "./serverComman
 /** 观战数据聚合间隔（毫秒） */
 const MONITOR_FLUSH_INTERVAL_MS = 50;
 
+/**
+ * 假观战者加入消息的投递延迟（毫秒）。
+ * 客户端收到 CreateRoom 响应后才会初始化房间状态（live 硬编码 false），
+ * 必须等它完成之后再投递 OnJoinRoom，否则会被丢弃、房主整局不上报回放数据。
+ */
+const FAKE_MONITOR_JOIN_DELAY_MS = 500;
+
 /** 心跳响应常量，避免每次新建对象 */
 const PONG = { type: "Pong" } as const;
 
@@ -897,13 +904,20 @@ export class Session {
   private sendFakeMonitorJoin(targetUser: User, room: Room): void {
     if (!this.state.replayEnabled || !room.replayEligible) return;
     const fake = this.state.replayRecorder.fakeMonitorInfo(this.state.serverLang);
-    setImmediate(() => {
+    // 客户端仅在房间 live 为 true 时才上报 Touches/Judges（phira/src/scene/song.rs）。
+    // 而 phira-mp-client 的 create_room() 是「收到 CreateRoom 响应之后」才初始化房间状态，
+    // 且其中的 live 字段硬编码为 false；JoinRoomResponse 里的 live 只对加入者生效。
+    // 因此房主唯一的 live 来源就是这条 OnJoinRoom。若用 setImmediate 立即投递，
+    // 它会与客户端的状态初始化竞态——先到就被 `if let Some(room)` 丢弃，
+    // 房主的 live 永远为 false，整局都不上报数据，回放只剩元数据（0 帧）。
+    // 这里延迟到客户端初始化完成之后再投递。
+    setTimeout(() => {
       void (async () => {
         if (!targetUser.room || targetUser.room.id !== room.id) return;
         await targetUser.trySend({ type: "OnJoinRoom", info: fake });
         await targetUser.trySend({ type: "Message", message: { type: "JoinRoom", user: fake.id, name: fake.name } });
       })();
-    });
+    }, FAKE_MONITOR_JOIN_DELAY_MS);
   }
 
   private async process(cmd: ClientCommand): Promise<ServerCommand | null> {
