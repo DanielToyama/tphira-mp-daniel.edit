@@ -51,10 +51,12 @@ chat-hitokoto-from-unknown = 佚名
 chat-roomlist-title = 当前可用的房间如下：
 chat-roomlist-empty = 当前没有可用房间
 chat-roomlist-item = { $id }（{ $count }/{ $max }）
+chat-roomlist-hidden = *隐藏的房间*
 chat-disabled-by-server = 为避免安全问题，该服务器已禁用聊天
 
-see-our-web = >访问iphira.danieluu.top来获取服务器状态！<
-see-our-web-advanced = >高级状态，回放查看等功能可访问tphira.danieluu.top查看！<
+welcome-site-tip = >前往tphira.danieluu.top查看游玩记录、游玩排行、查询回放等！<
+welcome-max-players = >本服务器支持最大64人联机！<
+welcome-hidden-room-tip = ※如果你不希望陌生人进入您的房间，可在房间号前面加h※
 see-our-web-migration-0 = >公告服务器地址即将更换为phira.danieluu.top:26638，请及时更换！<
 see-our-web-migration-1 = >原phira.danieltoyama.fun:26638=>phira.danieluu.top:26638<
 chat-group-0 = 来加入我们的群组一起聊天吧！

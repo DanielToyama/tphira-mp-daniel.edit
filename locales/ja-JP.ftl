@@ -51,10 +51,12 @@ chat-hitokoto-from-unknown = 詠み人知らず
 chat-roomlist-title = 利用可能なルーム：
 chat-roomlist-empty = 利用可能なルームはありません
 chat-roomlist-item = { $id }（{ $count }/{ $max }）
+chat-roomlist-hidden = *非公開の部屋*
 chat-disabled-by-server = 安全上の問題を避けるため、このサーバーではチャットが無効になっています。
 
-see-our-web = >iphira.danieluu.top でサーバーの状態を確認できます！<
-see-our-web-advanced = >詳細な状態やリプレイ閲覧などは tphira.danieluu.top でご確認ください！<
+welcome-site-tip = >tphira.danieluu.top でプレイ記録・ランキング・リプレイ検索などをご覧いただけます！<
+welcome-max-players = >本サーバーは最大 64 人のマルチプレイに対応しています！<
+welcome-hidden-room-tip = ※知らない人を部屋に入れたくない場合は、部屋番号の先頭に h を付けてください※
 see-our-web-migration-0 = >お知らせ：サーバーアドレスは phira.danieluu.top:26638 に変更されます。お早めに切り替えてください！<
 see-our-web-migration-1 = >旧 phira.danieltoyama.fun:26638=>phira.danieluu.top:26638<
 chat-group-0 = QQグループに参加して一緒にチャットしましょう！

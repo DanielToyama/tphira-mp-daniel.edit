@@ -6,6 +6,7 @@
  */
 import type { ServerState } from "../../core/state.js";
 import type { Language } from "../../utils/l10n.js";
+import { isHiddenRoomId } from "../../game/roomUtils.js";
 
 /** 缓存有效期(2 秒) */
 const ROOM_LIST_CACHE_TTL_MS = 2000;
@@ -37,14 +38,14 @@ export function getAvailableRoomsText(state: ServerState, lang: Language): strin
     if (cached !== undefined) return cached;
   }
 
-  const rooms: Array<{ id: string; count: number; max: number }> = [];
+  const rooms: Array<{ id: string; count: number; max: number; hidden: boolean }> = [];
   for (const [id, room] of state.rooms) {
     if (String(id).startsWith("_")) continue;
     if (room.locked) continue;
     if (room.state.type !== "SelectChart" && room.state.type !== "Playing") continue;
     const count = room.userIds().length;
     if (count >= room.maxUsers) continue;
-    rooms.push({ id: String(id), count, max: room.maxUsers });
+    rooms.push({ id: String(id), count, max: room.maxUsers, hidden: isHiddenRoomId(String(id)) });
   }
   rooms.sort((a, b) => a.id.localeCompare(b.id));
 
@@ -54,7 +55,12 @@ export function getAvailableRoomsText(state: ServerState, lang: Language): strin
   }
 
   const joiner = lang.lang === "zh-CN" ? "；" : "; ";
-  const items = rooms.map((r) => lang.format("chat-roomlist-item", { id: r.id, count: r.count, max: r.max }));
+  // 隐私房间只显示占位文案，不暴露房间号与人数
+  const items = rooms.map((r) =>
+    r.hidden
+      ? lang.format("chat-roomlist-hidden")
+      : lang.format("chat-roomlist-item", { id: r.id, count: r.count, max: r.max })
+  );
   const text = items.join(joiner);
 
   if (cache.text.size >= ROOM_LIST_MAX_CACHED_LANGS) {

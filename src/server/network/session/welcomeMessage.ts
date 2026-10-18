@@ -58,13 +58,14 @@ export async function sendWelcomeExtras(opts: {
     parts.push(sep);
     parts.push(lang.format("chat-roomlist-title") + "\n");
     parts.push(getAvailableRoomsText(state, lang) + "\n");
+    parts.push(lang.format("welcome-hidden-room-tip") + "\n");
     parts.push(sep);
     if (tip) parts.push(tip + "\n");
 
     // 站点与群组信息(替代此前的"一言"展示)
     parts.push(sep);
-    parts.push(lang.format("see-our-web") + "\n");
-    parts.push(lang.format("see-our-web-advanced") + "\n");
+    parts.push(lang.format("welcome-site-tip") + "\n");
+    parts.push(lang.format("welcome-max-players") + "\n");
     // 服务器地址迁移公告：仅在截止时间前展示，过期后自动隐藏
     if (shouldShowMigrationNotice()) {
       parts.push(lang.format("see-our-web-migration-0") + "\n");

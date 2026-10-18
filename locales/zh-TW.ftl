@@ -51,10 +51,12 @@ chat-hitokoto-from-unknown = 佚名
 chat-roomlist-title = 目前可用的房間如下：
 chat-roomlist-empty = 目前沒有可用房間
 chat-roomlist-item = { $id }（{ $count }/{ $max }）
+chat-roomlist-hidden = *隱藏的房間*
 chat-disabled-by-server = 為避免安全問題，該伺服器已停用聊天
 
-see-our-web = >前往 iphira.danieluu.top 取得伺服器狀態！<
-see-our-web-advanced = >進階狀態、回放查看等功能可前往 tphira.danieluu.top 查看！<
+welcome-site-tip = >前往 tphira.danieluu.top 查看遊玩記錄、遊玩排行、查詢回放等！<
+welcome-max-players = >本伺服器支援最大 64 人連線！<
+welcome-hidden-room-tip = ※如果你不希望陌生人進入您的房間，可在房間號前面加 h※
 see-our-web-migration-0 = >公告伺服器位址即將更換為 phira.danieluu.top:26638，請及時更換！<
 see-our-web-migration-1 = >原 phira.danieltoyama.fun:26638=>phira.danieluu.top:26638<
 chat-group-0 = 來加入我們的群組一起聊天吧！

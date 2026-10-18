@@ -51,10 +51,12 @@ chat-hitokoto-from-unknown = Неизвестно
 chat-roomlist-title = Доступные комнаты:
 chat-roomlist-empty = Нет доступных комнат
 chat-roomlist-item = { $id } ({ $count }/{ $max })
+chat-roomlist-hidden = *Скрытая комната*
 chat-disabled-by-server = Чат отключён на этом сервере во избежание проблем с безопасностью.
 
-see-our-web = >Заходите на iphira.danieluu.top, чтобы проверить состояние сервера!<
-see-our-web-advanced = >Расширенный статус, просмотр реплеев и другое — на tphira.danieluu.top!<
+welcome-site-tip = >Записи игр, рейтинги, просмотр реплеев и другое — на tphira.danieluu.top!<
+welcome-max-players = >Этот сервер поддерживает до 64 игроков в мультиплеере!<
+welcome-hidden-room-tip = ※Чтобы в вашу комнату не заходили посторонние, добавьте "h" перед номером комнаты※
 see-our-web-migration-0 = >Объявление: адрес сервера изменится на phira.danieluu.top:26638, пожалуйста, переключитесь заранее!<
 see-our-web-migration-1 = >Было phira.danieltoyama.fun:26638=>phira.danieluu.top:26638<
 chat-group-0 = Присоединяйтесь к нашей группе QQ и общайтесь с нами!

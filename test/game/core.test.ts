@@ -49,13 +49,15 @@ describe("核心功能", () => {
         return (
           bobChat.some((s) => s.includes("当前可用的房间如下：")) &&
           bobChat.some((s) => s.includes("群：123456")) &&
-          bobChat.some((s) => s.includes("iphira.danieluu.top")) &&
+          bobChat.some((s) => s.includes("tphira.danieluu.top")) &&
           bobChat.some((s) => s.includes("phira.danieluu.top:26638"))
         );
       }, 1500);
 
-      // 状态站与迁移公告（公告含新地址与旧地址对照）
-      expect(bobChat.join("\n")).toContain("iphira.danieluu.top");
+      // 站点引导已改为指向面板（不再展示旧的 iphira 状态站地址）；迁移公告仍含新旧地址对照
+      expect(bobChat.join("\n")).toContain("tphira.danieluu.top");
+      expect(bobChat.join("\n")).toContain("最大64人联机");
+      expect(bobChat.join("\n")).not.toContain("iphira.danieluu.top");
       expect(bobChat.join("\n")).toContain("phira.danieluu.top:26638");
       expect(bobChat.join("\n")).toContain("phira.danieltoyama.fun:26638");
       expect(bobChat.join("\n")).toContain("655504577");

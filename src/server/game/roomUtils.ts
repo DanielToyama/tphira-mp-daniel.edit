@@ -14,6 +14,16 @@ function roomHasMonitors(room: Room): boolean {
   return room.monitorIds().length > 0;
 }
 
+/**
+ * 隐私房间判定：房间号以 h / H 开头的房间视为「隐私房间」。
+ *
+ * 让「不希望陌生人进入」的房主把房间藏起来：公开列表（客户端文字房间列表与
+ * /room 接口）只展示占位信息，房间号不外泄，只有拿到房主告知的完整房间号才能加入。
+ */
+export function isHiddenRoomId(roomid: string): boolean {
+  return /^h/i.test(roomid);
+}
+
 /** 录制回放模块：判断房间是否应该录制 */
 function roomShouldRecord(room: Room, replayEnabled: boolean): boolean {
   return replayEnabled && room.replayEligible;

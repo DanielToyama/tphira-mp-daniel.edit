@@ -11,7 +11,7 @@
  * 所有状态修改操作都需要通过 Mutex 进行同步，确保线程安全。
  */
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { Mutex } from "../utils/mutex.js";
 import type { RoomId } from "../../common/roomId.js";
 import { parseRoomId, roomIdToString } from "../../common/roomId.js";
@@ -23,6 +23,7 @@ import type { User } from "../game/user.js";
 import type { Logger } from "../utils/logger.js";
 import { Language } from "../utils/l10n.js";
 import { ReplayRecorder } from "../replay/replayRecorder.js";
+import { PlayerStatsStore } from "../stats/playerStats.js";
 import { defaultReplayBaseDir } from "../replay/replayStorage.js";
 import type { WebSocketService } from "../network/websocketService.js";
 import type { ConsoleOutputLine } from "../cli/cliHelpers.js";
@@ -118,6 +119,11 @@ export class ServerState {
   /** 回放录制器实例，负责录制和存储游戏回放 */
   readonly replayRecorder: ReplayRecorder;
 
+  // ========== 玩家统计（游玩排行） ==========
+
+  /** 玩家游玩统计：游玩次数 / 平均分数 / 平均准度，落盘到 data/player_stats.json */
+  readonly playerStats: PlayerStatsStore;
+
   // ========== WebSocket / HTTP 服务引用 ==========
 
   /** WebSocket 服务引用（仅在 HTTP 服务启用时存在） */
@@ -200,6 +206,8 @@ export class ServerState {
     this.version = readAppVersion();
     const replayBaseDir = config.replay_base_dir ?? defaultReplayBaseDir();
     this.replayRecorder = new ReplayRecorder(replayBaseDir, logger);
+    // 与 admin_data.json 同目录，跟随 PHIRA_MP_HOME / 工作目录
+    this.playerStats = new PlayerStatsStore(join(dirname(adminDataPath), "player_stats.json"), logger);
   }
 
   /**

@@ -37,6 +37,7 @@ export const EMBEDDED_LOCALES: Record<string, Record<string, string>> = {
       "chat-maintenance-disabled": " ✅ Server maintenance is over; back to normal",
       "chat-maintenance-enabled": " ⚙️ The server has entered maintenance mode; new players are paused. Please finish the current game soon",
       "chat-roomlist-empty": " No available rooms",
+      "chat-roomlist-hidden": " *Hidden room*",
       "chat-roomlist-item": " { $id } ({ $count }/{ $max })",
       "chat-roomlist-title": " Available rooms:",
       "chat-server-stopping": " ⚠️ The server is shutting down for maintenance; you will be disconnected after the current game",
@@ -276,8 +277,6 @@ export const EMBEDDED_LOCALES: Record<string, Record<string, string>> = {
       "roomid-invalid": " Invalid Room ID",
       "roomid-too-long": " Room ID is too long",
       "rooms-limit-reached": " Server room limit reached, please try again later",
-      "see-our-web": " >Visit iphira.danieluu.top to check server status!<",
-      "see-our-web-advanced": " >For advanced status, replay viewing and more, visit tphira.danieluu.top!<",
       "see-our-web-migration-0": " >Notice: the server address will change to phira.danieluu.top:26638, please switch in time!<",
       "see-our-web-migration-1": " >Old phira.danieltoyama.fun:26638=>phira.danieluu.top:26638<",
       "server-maintenance": " The server is under maintenance and cannot be joined right now",
@@ -291,7 +290,10 @@ export const EMBEDDED_LOCALES: Record<string, Record<string, string>> = {
       "upload-success": " Upload successful",
       "user-banned-by-server": " You have been banned from this server and cannot perform any operations.",
       "user-must-be-disconnected": " User must be disconnected",
-      "user-not-in-room": " User is not in a room"
+      "user-not-in-room": " User is not in a room",
+      "welcome-hidden-room-tip": " ※To keep strangers out of your room, prefix the room ID with \"h\"※",
+      "welcome-max-players": " >This server supports up to 64 players in multiplayer!<",
+      "welcome-site-tip": " >Visit tphira.danieluu.top for play records, rankings, replay lookup and more!<"
   },
   "ja-JP": {
       "admin-disabled": " 管理者機能は無効になっています",
@@ -328,6 +330,7 @@ export const EMBEDDED_LOCALES: Record<string, Record<string, string>> = {
       "chat-maintenance-disabled": " ✅ サーバーのメンテナンスが終了し、通常状態に戻りました",
       "chat-maintenance-enabled": " ⚙️ サーバーがメンテナンスモードに入りました。新規参加を停止します。現在の対局を早めに終了してください",
       "chat-roomlist-empty": " 利用可能なルームはありません",
+      "chat-roomlist-hidden": " *非公開の部屋*",
       "chat-roomlist-item": " { $id }（{ $count }/{ $max }）",
       "chat-roomlist-title": " 利用可能なルーム：",
       "chat-server-stopping": " ⚠️ サーバーはまもなくメンテナンスのため停止します。対局終了後に切断されます",
@@ -567,8 +570,6 @@ export const EMBEDDED_LOCALES: Record<string, Record<string, string>> = {
       "roomid-invalid": " ルームIDが不正です",
       "roomid-too-long": " ルームIDが長すぎます",
       "rooms-limit-reached": " サーバーのルーム数が上限に達しました。後でもう一度お試しください",
-      "see-our-web": " >iphira.danieluu.top でサーバーの状態を確認できます！<",
-      "see-our-web-advanced": " >詳細な状態やリプレイ閲覧などは tphira.danieluu.top でご確認ください！<",
       "see-our-web-migration-0": " >お知らせ：サーバーアドレスは phira.danieluu.top:26638 に変更されます。お早めに切り替えてください！<",
       "see-our-web-migration-1": " >旧 phira.danieltoyama.fun:26638=>phira.danieluu.top:26638<",
       "server-maintenance": " サーバーはメンテナンス中のため、現在参加できません",
@@ -582,7 +583,10 @@ export const EMBEDDED_LOCALES: Record<string, Record<string, string>> = {
       "upload-success": " アップロードに成功しました",
       "user-banned-by-server": " あなたはこのサーバーから禁止されており、いかなる操作も行えません。",
       "user-must-be-disconnected": " ユーザーは切断状態である必要があります",
-      "user-not-in-room": " ユーザーはルームにいません"
+      "user-not-in-room": " ユーザーはルームにいません",
+      "welcome-hidden-room-tip": " ※知らない人を部屋に入れたくない場合は、部屋番号の先頭に h を付けてください※",
+      "welcome-max-players": " >本サーバーは最大 64 人のマルチプレイに対応しています！<",
+      "welcome-site-tip": " >tphira.danieluu.top でプレイ記録・ランキング・リプレイ検索などをご覧いただけます！<"
   },
   "ko-KR": {
       "admin-disabled": " 관리자 기능이 비활성화되어 있습니다",
@@ -619,6 +623,7 @@ export const EMBEDDED_LOCALES: Record<string, Record<string, string>> = {
       "chat-maintenance-disabled": " ✅ 서버 점검이 끝나 정상으로 돌아왔습니다",
       "chat-maintenance-enabled": " ⚙️ 서버가 점검 모드로 전환되어 신규 참가가 중단됩니다. 현재 게임을 곧 마쳐 주세요",
       "chat-roomlist-empty": " 사용 가능한 방이 없습니다",
+      "chat-roomlist-hidden": " *숨겨진 방*",
       "chat-roomlist-item": " { $id }（{ $count }/{ $max }）",
       "chat-roomlist-title": " 사용 가능한 방:",
       "chat-server-stopping": " ⚠️ 서버가 곧 점검을 위해 종료됩니다. 현재 게임이 끝나면 연결이 끊깁니다",
@@ -858,8 +863,6 @@ export const EMBEDDED_LOCALES: Record<string, Record<string, string>> = {
       "roomid-invalid": " 잘못된 방 ID",
       "roomid-too-long": " 방 ID가 너무 깁니다",
       "rooms-limit-reached": " 서버 방 수가 한도에 도달했습니다. 나중에 다시 시도해 주세요",
-      "see-our-web": " >iphira.danieluu.top 에서 서버 상태를 확인하세요!<",
-      "see-our-web-advanced": " >고급 상태, 리플레이 보기 등은 tphira.danieluu.top 에서 확인하세요!<",
       "see-our-web-migration-0": " >공지: 서버 주소가 phira.danieluu.top:26638 로 변경됩니다. 빠르게 변경해 주세요!<",
       "see-our-web-migration-1": " >기존 phira.danieltoyama.fun:26638=>phira.danieluu.top:26638<",
       "server-maintenance": " 서버가 점검 중이라 지금은 참가할 수 없습니다",
@@ -873,7 +876,10 @@ export const EMBEDDED_LOCALES: Record<string, Record<string, string>> = {
       "upload-success": " 업로드 성공",
       "user-banned-by-server": " 이 서버에서 차단되어 어떠한 작업도 수행할 수 없습니다.",
       "user-must-be-disconnected": " 사용자는 연결이 끊긴 상태여야 합니다",
-      "user-not-in-room": " 사용자가 방에 없습니다"
+      "user-not-in-room": " 사용자가 방에 없습니다",
+      "welcome-hidden-room-tip": " ※모르는 사람이 방에 들어오는 것을 원치 않으시면 방 번호 앞에 h 를 붙여 주세요※",
+      "welcome-max-players": " >이 서버는 최대 64인 멀티플레이를 지원합니다!<",
+      "welcome-site-tip": " >tphira.danieluu.top 에서 플레이 기록, 랭킹, 리플레이 조회 등을 확인하세요!<"
   },
   "ru-RU": {
       "admin-disabled": " Функция администратора отключена",
@@ -910,6 +916,7 @@ export const EMBEDDED_LOCALES: Record<string, Record<string, string>> = {
       "chat-maintenance-disabled": " ✅ Обслуживание сервера завершено, работа в обычном режиме",
       "chat-maintenance-enabled": " ⚙️ Сервер перешёл в режим обслуживания, новые игроки приостановлены. Пожалуйста, скорее завершите текущую игру",
       "chat-roomlist-empty": " Нет доступных комнат",
+      "chat-roomlist-hidden": " *Скрытая комната*",
       "chat-roomlist-item": " { $id } ({ $count }/{ $max })",
       "chat-roomlist-title": " Доступные комнаты:",
       "chat-server-stopping": " ⚠️ Сервер скоро остановится на обслуживание; вы будете отключены после текущей игры",
@@ -1149,8 +1156,6 @@ export const EMBEDDED_LOCALES: Record<string, Record<string, string>> = {
       "roomid-invalid": " Недействительный ID комнаты",
       "roomid-too-long": " ID комнаты слишком длинный",
       "rooms-limit-reached": " Достигнут лимит комнат на сервере, попробуйте позже",
-      "see-our-web": " >Заходите на iphira.danieluu.top, чтобы проверить состояние сервера!<",
-      "see-our-web-advanced": " >Расширенный статус, просмотр реплеев и другое — на tphira.danieluu.top!<",
       "see-our-web-migration-0": " >Объявление: адрес сервера изменится на phira.danieluu.top:26638, пожалуйста, переключитесь заранее!<",
       "see-our-web-migration-1": " >Было phira.danieltoyama.fun:26638=>phira.danieluu.top:26638<",
       "server-maintenance": " Сервер на техническом обслуживании, подключение временно недоступно",
@@ -1164,7 +1169,10 @@ export const EMBEDDED_LOCALES: Record<string, Record<string, string>> = {
       "upload-success": " Загрузка успешна",
       "user-banned-by-server": " Вы заблокированы на этом сервере и не можете выполнять никаких действий.",
       "user-must-be-disconnected": " Пользователь должен быть отключён",
-      "user-not-in-room": " Пользователь не в комнате"
+      "user-not-in-room": " Пользователь не в комнате",
+      "welcome-hidden-room-tip": " ※Чтобы в вашу комнату не заходили посторонние, добавьте \"h\" перед номером комнаты※",
+      "welcome-max-players": " >Этот сервер поддерживает до 64 игроков в мультиплеере!<",
+      "welcome-site-tip": " >Записи игр, рейтинги, просмотр реплеев и другое — на tphira.danieluu.top!<"
   },
   "zh-CN": {
       "admin-disabled": " 管理员功能未启用",
@@ -1201,6 +1209,7 @@ export const EMBEDDED_LOCALES: Record<string, Record<string, string>> = {
       "chat-maintenance-disabled": " ✅ 服务器维护已结束，恢复正常",
       "chat-maintenance-enabled": " ⚙️ 服务器已进入维护模式，暂停新玩家加入，请尽快结束当前对局",
       "chat-roomlist-empty": " 当前没有可用房间",
+      "chat-roomlist-hidden": " *隐藏的房间*",
       "chat-roomlist-item": " { $id }（{ $count }/{ $max }）",
       "chat-roomlist-title": " 当前可用的房间如下：",
       "chat-server-stopping": " ⚠️ 服务器即将关闭维护，对局结束后连接将断开",
@@ -1440,8 +1449,6 @@ export const EMBEDDED_LOCALES: Record<string, Record<string, string>> = {
       "roomid-invalid": " 房间 ID 不合法",
       "roomid-too-long": " 房间 ID 过长",
       "rooms-limit-reached": " 服务器房间数量已达上限，请稍后再试",
-      "see-our-web": " >访问iphira.danieluu.top来获取服务器状态！<",
-      "see-our-web-advanced": " >高级状态，回放查看等功能可访问tphira.danieluu.top查看！<",
       "see-our-web-migration-0": " >公告服务器地址即将更换为phira.danieluu.top:26638，请及时更换！<",
       "see-our-web-migration-1": " >原phira.danieltoyama.fun:26638=>phira.danieluu.top:26638<",
       "server-maintenance": " 服务器正在维护中，暂时无法加入",
@@ -1455,7 +1462,10 @@ export const EMBEDDED_LOCALES: Record<string, Record<string, string>> = {
       "upload-success": " 上传成功",
       "user-banned-by-server": " 你已被服务器封禁，无法进行任何操作。",
       "user-must-be-disconnected": " 用户必须处于离线状态",
-      "user-not-in-room": " 用户不在房间中"
+      "user-not-in-room": " 用户不在房间中",
+      "welcome-hidden-room-tip": " ※如果你不希望陌生人进入您的房间，可在房间号前面加h※",
+      "welcome-max-players": " >本服务器支持最大64人联机！<",
+      "welcome-site-tip": " >前往tphira.danieluu.top查看游玩记录、游玩排行、查询回放等！<"
   },
   "zh-TW": {
       "admin-disabled": " 管理員功能未啟用",
@@ -1492,6 +1502,7 @@ export const EMBEDDED_LOCALES: Record<string, Record<string, string>> = {
       "chat-maintenance-disabled": " ✅ 伺服器維護已結束，恢復正常",
       "chat-maintenance-enabled": " ⚙️ 伺服器已進入維護模式，暫停新玩家加入，請盡快結束當前對局",
       "chat-roomlist-empty": " 目前沒有可用房間",
+      "chat-roomlist-hidden": " *隱藏的房間*",
       "chat-roomlist-item": " { $id }（{ $count }/{ $max }）",
       "chat-roomlist-title": " 目前可用的房間如下：",
       "chat-server-stopping": " ⚠️ 伺服器即將關閉維護，對局結束後連線將斷開",
@@ -1731,8 +1742,6 @@ export const EMBEDDED_LOCALES: Record<string, Record<string, string>> = {
       "roomid-invalid": " 房間 ID 不合法",
       "roomid-too-long": " 房間 ID 過長",
       "rooms-limit-reached": " 伺服器房間數量已達上限，請稍後再試",
-      "see-our-web": " >前往 iphira.danieluu.top 取得伺服器狀態！<",
-      "see-our-web-advanced": " >進階狀態、回放查看等功能可前往 tphira.danieluu.top 查看！<",
       "see-our-web-migration-0": " >公告伺服器位址即將更換為 phira.danieluu.top:26638，請及時更換！<",
       "see-our-web-migration-1": " >原 phira.danieltoyama.fun:26638=>phira.danieluu.top:26638<",
       "server-maintenance": " 伺服器正在維護中，暫時無法加入",
@@ -1746,6 +1755,9 @@ export const EMBEDDED_LOCALES: Record<string, Record<string, string>> = {
       "upload-success": " 上傳成功",
       "user-banned-by-server": " 你已被伺服器封鎖，無法進行任何操作。",
       "user-must-be-disconnected": " 使用者必須處於離線狀態",
-      "user-not-in-room": " 使用者不在房間中"
+      "user-not-in-room": " 使用者不在房間中",
+      "welcome-hidden-room-tip": " ※如果你不希望陌生人進入您的房間，可在房間號前面加 h※",
+      "welcome-max-players": " >本伺服器支援最大 64 人連線！<",
+      "welcome-site-tip": " >前往 tphira.danieluu.top 查看遊玩記錄、遊玩排行、查詢回放等！<"
   }
 };
