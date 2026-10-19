@@ -52,6 +52,24 @@ describe("玩家游玩统计", () => {
     expect(beyond.entries).toEqual([]);
   });
 
+  test("按 id 查询名次", async () => {
+    tempDir = await createTempDir("player-stats-rank");
+    const store = new PlayerStatsStore(join(tempDir, "player_stats.json"));
+
+    // 名次：104(5 局) > 103(4) > 102(3) > 101(2) > 100(1)
+    for (let i = 0; i < 5; i++) {
+      for (let n = 0; n <= i; n++) store.recordPlay(100 + i, `P${100 + i}`, 1000, 0.5);
+    }
+
+    expect(store.size).toBe(5);
+    expect(store.rankOf(104)?.rank).toBe(1);
+    expect(store.rankOf(102)?.rank).toBe(3);
+    expect(store.rankOf(100)?.rank).toBe(5);
+    expect(store.rankOf(100)?.entry).toMatchObject({ id: 100, name: "P100", plays: 1 });
+    // 未上榜
+    expect(store.rankOf(999)).toBeNull();
+  });
+
   test("非法输入被忽略", async () => {
     tempDir = await createTempDir("player-stats-invalid");
     const store = new PlayerStatsStore(join(tempDir, "player_stats.json"));
@@ -112,7 +130,7 @@ describe("游玩排行 HTTP 接口", () => {
     if (tempDir) await cleanupTempDir(tempDir);
   });
 
-  test("完成一局后排行榜出现该玩家", async () => {
+  test("完成一局后排行榜出现该玩家，并能按 user_id 查到名次", async () => {
     tempDir = await createTempDir("player-stats-route");
 
     const running = await startServer({
@@ -153,6 +171,19 @@ describe("游玩排行 HTTP 接口", () => {
       expect(after.players[0]).toMatchObject({ id: 100, name: "Alice", plays: 1 });
       expect(typeof after.players[0].avg_score).toBe("number");
       expect(typeof after.players[0].avg_accuracy).toBe("number");
+
+      // user_id 直查名次（前端「我的排名」贴底栏用）
+      const mine = await originalFetch(`${base}/stats/leaderboard?user_id=100`).then((r) => r.json() as any);
+      expect(mine).toMatchObject({ ok: true, total: 1, rank: 1 });
+      expect(mine.entry).toMatchObject({ id: 100, name: "Alice", plays: 1 });
+
+      // 未上榜：rank 0 且 entry 为 null，而不是报错
+      const notRanked = await originalFetch(`${base}/stats/leaderboard?user_id=999`).then((r) => r.json() as any);
+      expect(notRanked).toMatchObject({ ok: true, total: 1, rank: 0, entry: null });
+
+      // 非法 user_id
+      const badId = await originalFetch(`${base}/stats/leaderboard?user_id=abc`);
+      expect(badId.status).toBe(400);
     } finally {
       await alice.close();
       await running.close();

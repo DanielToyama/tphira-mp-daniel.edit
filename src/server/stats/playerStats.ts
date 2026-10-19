@@ -34,6 +34,18 @@ type StatsFile = {
 /** 落盘防抖间隔（毫秒）：避免每局结束都写盘 */
 const FLUSH_DEBOUNCE_MS = 2000;
 
+/** 内部累计记录 → 对外条目（平均值已算好） */
+function toEntry(it: PlayerStatsRecord): LeaderboardEntry {
+  return {
+    id: it.id,
+    name: it.name,
+    plays: it.plays,
+    avg_score: it.plays > 0 ? Math.round(it.totalScore / it.plays) : 0,
+    avg_accuracy: it.plays > 0 ? it.totalAccuracy / it.plays : 0,
+    last_played: it.lastPlayed
+  };
+}
+
 /**
  * 玩家游玩统计（游玩次数 / 平均分数 / 平均准度）
  *
@@ -53,6 +65,11 @@ export class PlayerStatsStore {
 
   get filePath(): string {
     return this.path;
+  }
+
+  /** 已上榜玩家总数 */
+  get size(): number {
+    return this.players.size;
   }
 
   /** 从磁盘加载统计；文件缺失或损坏时静默跳过（从空统计开始） */
@@ -104,22 +121,25 @@ export class PlayerStatsStore {
 
   /** 按游玩次数降序分页返回排行榜 */
   leaderboard(offset: number, limit: number): { total: number; entries: LeaderboardEntry[] } {
-    const all = [...this.players.values()].sort(
-      (a, b) => b.plays - a.plays || b.lastPlayed - a.lastPlayed || a.id - b.id
-    );
+    const all = this.sorted();
     const start = Math.max(0, offset);
     const slice = all.slice(start, start + Math.max(0, limit));
-    return {
-      total: all.length,
-      entries: slice.map((it) => ({
-        id: it.id,
-        name: it.name,
-        plays: it.plays,
-        avg_score: it.plays > 0 ? Math.round(it.totalScore / it.plays) : 0,
-        avg_accuracy: it.plays > 0 ? it.totalAccuracy / it.plays : 0,
-        last_played: it.lastPlayed
-      }))
-    };
+    return { total: all.length, entries: slice.map(toEntry) };
+  }
+
+  /** 查询某个用户在排行榜中的名次（1 起）；未上榜返回 null */
+  rankOf(userId: number): { rank: number; entry: LeaderboardEntry } | null {
+    const all = this.sorted();
+    const index = all.findIndex((it) => it.id === userId);
+    if (index < 0) return null;
+    return { rank: index + 1, entry: toEntry(all[index]!) };
+  }
+
+  /** 排行榜排序：游玩次数降序，其次最近游玩，最后 id（保证名次稳定） */
+  private sorted(): PlayerStatsRecord[] {
+    return [...this.players.values()].sort(
+      (a, b) => b.plays - a.plays || b.lastPlayed - a.lastPlayed || a.id - b.id
+    );
   }
 
   private scheduleFlush(): void {

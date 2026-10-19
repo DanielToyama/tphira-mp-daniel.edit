@@ -173,7 +173,25 @@ export async function tryHandlePublicRoutes(ctx: RequestContext): Promise<boolea
   }
 
   // 玩家游玩排行（无需鉴权）：按游玩次数降序，支持分页
+  // 带 user_id 时改为「查该用户的名次」，一次请求即可定位，前端不必逐页回扫
   if (req.method === "GET" && url.pathname === "/stats/leaderboard") {
+    const userIdRaw = url.searchParams.get("user_id");
+    if (userIdRaw !== null) {
+      const userId = Number(userIdRaw);
+      if (!Number.isInteger(userId) || userId < 0) {
+        write(400, { ok: false, error: "invalid-user-id" });
+        return true;
+      }
+      const hit = state.playerStats.rankOf(userId);
+      write(200, {
+        ok: true,
+        total: state.playerStats.size,
+        rank: hit?.rank ?? 0,
+        entry: hit?.entry ?? null
+      });
+      return true;
+    }
+
     const offsetRaw = Number(url.searchParams.get("offset") ?? "0");
     const limitRaw = Number(url.searchParams.get("limit") ?? "30");
     const offset = Number.isFinite(offsetRaw) && offsetRaw > 0 ? Math.floor(offsetRaw) : 0;
