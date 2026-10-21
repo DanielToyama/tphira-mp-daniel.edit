@@ -577,11 +577,19 @@ export class Session {
         { userId: user.id, isConnectionLog: true }
       );
 
+      // 账号级访问统计（用户粘性企划）：次数基数取历史游玩次数，日期从本功能上线起记录
+      const visit = this.state.visitStats.recordVisit(
+        user.id,
+        user.name,
+        this.state.playerStats.playsOf(user.id)
+      );
+
       void sendWelcomeExtras({
         user,
         state: this.state,
         sendSystemChat: (content) => this.sendSystemChat(content),
-        hitokoto
+        hitokoto,
+        visit
       }).catch(NOOP);
     } catch (e) {
       // 认证后阶段失败：已有用户信息，使用玩家 API 返回的语言
@@ -811,6 +819,8 @@ export class Session {
       { user: user.name },
       { userId: user.id }
     );
+    // 房间名只聚合长度/是否含数字/是否命中彩蛋，原始字符串不入库
+    this.state.visitStats.recordRoomName(id);
     await this.broadcastRoomMessage(room, { type: "CreateRoom", user: user.id });
     this.sendFakeMonitorJoin(user, room);
     return {};

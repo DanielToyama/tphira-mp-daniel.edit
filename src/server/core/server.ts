@@ -277,6 +277,7 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
   state = new ServerState(mergedCfg, logger, serverName, adminDataPath, configPath);
   await state.loadAdminData();
   await state.playerStats.load();
+  await state.visitStats.load();
   state.startCleanup();
   const replayCleanup = startReplayCleanup({ getTtlDays: () => currentConfig.replay_ttl_days ?? 4, logger });
   // 日志维护：历史日志压缩 + 目录容量上限（默认压缩 14 天前的日志、目录上限 500MB；0 表示关闭）
@@ -683,6 +684,7 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
       } finally {
         await state.flushAdminDataNow().catch(NOOP);
         await state.playerStats.flush().catch(NOOP);
+        await state.visitStats.flush().catch(NOOP);
         await state.replayRecorder.closeAll().catch((err) => {
           logger.warn(`Replay recorder closeAll failed: ${err instanceof Error ? err.message : String(err)}`);
         });

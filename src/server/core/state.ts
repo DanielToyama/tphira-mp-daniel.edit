@@ -24,6 +24,7 @@ import type { Logger } from "../utils/logger.js";
 import { Language } from "../utils/l10n.js";
 import { ReplayRecorder } from "../replay/replayRecorder.js";
 import { PlayerStatsStore } from "../stats/playerStats.js";
+import { VisitStatsStore } from "../stats/visitStats.js";
 import { defaultReplayBaseDir } from "../replay/replayStorage.js";
 import type { WebSocketService } from "../network/websocketService.js";
 import type { ConsoleOutputLine } from "../cli/cliHelpers.js";
@@ -124,6 +125,11 @@ export class ServerState {
   /** 玩家游玩统计：游玩次数 / 平均分数 / 平均准度，落盘到 data/player_stats.json */
   readonly playerStats: PlayerStatsStore;
 
+  // ========== 访问统计（用户粘性企划） ==========
+
+  /** 账号级访问统计：次数 / 首末日期 / 永久编号 / 全局日计数，落盘到 data/visit_stats.json */
+  readonly visitStats: VisitStatsStore;
+
   // ========== WebSocket / HTTP 服务引用 ==========
 
   /** WebSocket 服务引用（仅在 HTTP 服务启用时存在） */
@@ -208,6 +214,7 @@ export class ServerState {
     this.replayRecorder = new ReplayRecorder(replayBaseDir, logger);
     // 与 admin_data.json 同目录，跟随 PHIRA_MP_HOME / 工作目录
     this.playerStats = new PlayerStatsStore(join(dirname(adminDataPath), "player_stats.json"), logger);
+    this.visitStats = new VisitStatsStore(join(dirname(adminDataPath), "visit_stats.json"), logger);
   }
 
   /**

@@ -72,6 +72,11 @@ export class PlayerStatsStore {
     return this.players.size;
   }
 
+  /** 某账号的累计游玩次数；未上榜返回 0 */
+  playsOf(userId: number): number {
+    return this.players.get(userId)?.plays ?? 0;
+  }
+
   /** 从磁盘加载统计；文件缺失或损坏时静默跳过（从空统计开始） */
   async load(): Promise<void> {
     try {
