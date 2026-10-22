@@ -385,8 +385,10 @@ export async function processClientCommand(ctx: CommandContext, cmd: ClientComma
             if (room.state.aborted.has(user.id)) throw new Error(user.lang.format("room-game-aborted"));
             if (room.state.results.has(user.id)) throw new Error(user.lang.format("record-already-uploaded"));
             room.state.results.set(user.id, record);
-            // 游玩排行统计：只统计在本服务器完成的对局
-            state.playerStats.recordPlay(user.id, user.name, record.score, record.accuracy);
+            // 游玩排行统计：只统计在本服务器完成的对局；监控号/测试号/保活号不计入
+            if (!state.isStatsExcluded(user.id)) {
+              state.playerStats.recordPlay(user.id, user.name, record.score, record.accuracy);
+            }
             if (state.replayEnabled && room.replayEligible)
               state.replayRecorder.setRecordId(room.id, user.id, record.id);
             void room.notifyWebSocket(state);

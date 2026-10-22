@@ -22,6 +22,11 @@ export type ServerConfig = {
   monitors: number[];
   /** 测试账号 ID 列表。默认值：[1739989] */
   test_account_ids?: number[];
+  /**
+   * 不计入访问统计（游玩排行 / 用户粘性）的账号 ID 列表。
+   * 默认值：[1902111]（保活检测号）；此外 monitors 与 test_account_ids 会自动叠加。
+   */
+  stats_excluded_user_ids?: number[];
   server_name?: string;
   host?: string;
   port?: number;

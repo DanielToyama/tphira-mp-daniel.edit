@@ -12,6 +12,12 @@ const FLUSH_DEBOUNCE_MS = 2000;
 export const LATE_NIGHT_START_HOUR = 0;
 export const LATE_NIGHT_END_HOUR = 6;
 
+/**
+ * 同一账号两次「计入统计」的最小间隔。
+ * 客户端连接多是短平快的（开房、看一眼、断线重连），半小时内反复连不该算多次到访。
+ */
+export const VISIT_COOLDOWN_MS = 30 * 60 * 1000;
+
 /** 客户端里程碑彩蛋触发点 */
 export const VISIT_MILESTONES: readonly number[] = [10, 50, 100, 200, 500, 1000];
 
@@ -35,6 +41,8 @@ export type VisitRecord = {
   firstSeenAt: number;
   /** 最近一次连接时间（毫秒） */
   lastSeenAt: number;
+  /** 最近一次「计入统计」的连接时间（毫秒）；冷却以它为基准，避免频繁重连把窗口一直往后推 */
+  lastCountedAt: number;
   /** 最近一次连接所在自然日（YYYY-MM-DD）；与今天不同即视为新的一天 */
   lastSeenDate: string;
   /** 有记录的天数（不同自然日的个数） */
@@ -102,6 +110,8 @@ export type VisitOutcome = {
   hour: number;
   /** 该小时今日是否只有自己连入过 */
   aloneInHour: boolean;
+  /** 本次是否真的计入了统计（冷却期内为 false，只刷新了最近连接时间） */
+  counted: boolean;
 };
 
 /** 全局面板快照 */
@@ -205,6 +215,12 @@ export class VisitStatsStore {
           baselinePlays: Number.isFinite(it.baselinePlays) && it.baselinePlays > 0 ? Math.floor(it.baselinePlays) : 0,
           firstSeenAt: Number.isFinite(it.firstSeenAt) ? it.firstSeenAt : Date.now(),
           lastSeenAt: Number.isFinite(it.lastSeenAt) ? it.lastSeenAt : Date.now(),
+          // 旧存档没有该字段时退化为 lastSeenAt，冷却行为与升级前一致
+          lastCountedAt: Number.isFinite((it as Partial<VisitRecord>).lastCountedAt)
+            ? Number((it as Partial<VisitRecord>).lastCountedAt)
+            : Number.isFinite(it.lastSeenAt)
+              ? it.lastSeenAt
+              : Date.now(),
           lastSeenDate: typeof it.lastSeenDate === "string" && it.lastSeenDate ? it.lastSeenDate : toDateKey(Date.now()),
           days: Number.isFinite(it.days) && it.days > 0 ? Math.floor(it.days) : 1
         });
@@ -230,6 +246,37 @@ export class VisitStatsStore {
     const today = toDateKey(now);
     const prev = this.players.get(userId);
     const isNewAccount = !prev;
+
+    // 冷却期：同一自然日内、距上次连接不足 30 分钟，视为同一次到访的延续。
+    // 只刷新最近连接时间，不动次数/天数/日计数，避免短平快重连把次数刷上去。
+    if (prev && prev.lastSeenDate === today && now - prev.lastCountedAt < VISIT_COOLDOWN_MS) {
+      prev.lastSeenAt = now;
+      if (name) prev.name = name;
+      // 重启导致当日 users 丢失时补登记（今天确实连过），但不累加 connections
+      let idx = this.daily.users.indexOf(userId);
+      if (idx < 0) {
+        this.daily.users.push(userId);
+        idx = this.daily.users.length - 1;
+      }
+      this.scheduleFlush();
+      const total = prev.baselinePlays + prev.visits;
+      return {
+        totalVisits: total,
+        previousVisits: Math.max(0, total - 1),
+        firstRecordedDay: false,
+        recordedDays: prev.days,
+        gapDays: 0,
+        number: prev.number,
+        isNewAccount: false,
+        newAccountsWhileAway: 0,
+        todayOrdinal: idx + 1,
+        todayUsers: this.daily.users.length,
+        hour: new Date(now).getHours(),
+        aloneInHour: false,
+        counted: false
+      };
+    }
+
     // 下面会就地更新 record，先把「上一次」的时间点存下来，供间隔与新增账号数计算
     const prevLastSeenAt = prev?.lastSeenAt ?? 0;
     const prevLastSeenDate = prev?.lastSeenDate ?? today;
@@ -239,6 +286,7 @@ export class VisitStatsStore {
       record = prev;
       record.visits += 1;
       record.lastSeenAt = now;
+      record.lastCountedAt = now;
       if (record.lastSeenDate !== today) {
         record.lastSeenDate = today;
         record.days += 1;
@@ -254,6 +302,7 @@ export class VisitStatsStore {
         baselinePlays: safeBaseline,
         firstSeenAt: now,
         lastSeenAt: now,
+        lastCountedAt: now,
         lastSeenDate: today,
         days: 1
       };
@@ -293,7 +342,8 @@ export class VisitStatsStore {
       todayOrdinal,
       todayUsers: this.daily.users.length,
       hour,
-      aloneInHour: this.daily.hours[hourKey] === 1
+      aloneInHour: this.daily.hours[hourKey] === 1,
+      counted: true
     };
   }
 

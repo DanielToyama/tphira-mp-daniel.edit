@@ -577,12 +577,11 @@ export class Session {
         { userId: user.id, isConnectionLog: true }
       );
 
-      // 账号级访问统计（用户粘性企划）：次数基数取历史游玩次数，日期从本功能上线起记录
-      const visit = this.state.visitStats.recordVisit(
-        user.id,
-        user.name,
-        this.state.playerStats.playsOf(user.id)
-      );
+      // 账号级访问统计（用户粘性企划）：次数基数取历史游玩次数，日期从本功能上线起记录。
+      // 监控号 / 测试号 / 保活检测号不计数，否则每几分钟一次的探测会把「第 X 次来到这里」刷爆。
+      const visit = this.state.isStatsExcluded(user.id)
+        ? null
+        : this.state.visitStats.recordVisit(user.id, user.name, this.state.playerStats.playsOf(user.id));
 
       void sendWelcomeExtras({
         user,

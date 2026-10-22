@@ -167,6 +167,7 @@ function field<K extends keyof ServerConfig>(f: ConfigField<K>): ConfigField {
 const CONFIG_FIELDS: ReadonlyArray<ConfigField> = [
   field({ key: "monitors", envName: "MONITORS", parse: parseIntegerListValue }),
   field({ key: "test_account_ids", envName: "TEST_ACCOUNT_IDS", parse: parseIntegerListValue }),
+  field({ key: "stats_excluded_user_ids", envName: "STATS_EXCLUDED_USER_IDS", parse: parseIntegerListValue }),
   field({ key: "server_name", envName: "SERVER_NAME", parse: parseStringValue }),
   field({ key: "host", envName: "HOST", parse: parseStringValue, startupOnly: true }),
   field({ key: "port", envName: "PORT", parse: parsePortValue, startupOnly: true }),
@@ -260,6 +261,7 @@ export function mergeConfig(base: ServerConfig, override: Partial<ServerConfig>)
     ...merged,
     monitors: merged.monitors ?? [2],
     test_account_ids: merged.test_account_ids ?? [1739989],
+    stats_excluded_user_ids: merged.stats_excluded_user_ids ?? [1902111],
     hitokoto_api_url: merged.hitokoto_api_url
   } as ServerConfig;
 }
@@ -278,6 +280,7 @@ export function buildConfigFromRecord(raw: unknown): ServerConfig {
   return {
     ...out,
     monitors: out.monitors ?? [2],
+    stats_excluded_user_ids: out.stats_excluded_user_ids ?? [1902111],
     hitokoto_api_url: out.hitokoto_api_url
   } as ServerConfig;
 }

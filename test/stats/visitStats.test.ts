@@ -133,12 +133,14 @@ describe("访问统计存储", () => {
   test("全局面板快照", async () => {
     tempDir = await createTempDir("visit-snapshot");
     const store = new VisitStatsStore(join(tempDir, "visit_stats.json"));
+    const t0 = new Date(2026, 0, 10, 12, 0, 0).getTime();
 
-    store.recordVisit(1, "A");
-    store.recordVisit(2, "B");
-    store.recordVisit(1, "A");
+    store.recordVisit(1, "A", 0, t0);
+    store.recordVisit(2, "B", 0, t0 + 1000);
+    // 第三次距首次已超过冷却期，才会再计入一次连接
+    store.recordVisit(1, "A", 0, t0 + 31 * 60_000);
 
-    const snap = store.snapshot();
+    const snap = store.snapshot(t0 + 31 * 60_000);
     expect(snap.serverDay).toBe(1);
     expect(snap.totalAccounts).toBe(2);
     expect(snap.todayConnections).toBe(3);
@@ -146,17 +148,54 @@ describe("访问统计存储", () => {
     expect(snap.todayNewAccounts).toBe(2);
   });
 
+  test("半小时内重复连接不计入次数", async () => {
+    tempDir = await createTempDir("visit-cooldown");
+    const store = new VisitStatsStore(join(tempDir, "visit_stats.json"));
+    const t0 = new Date(2026, 0, 10, 12, 0, 0).getTime();
+
+    const first = store.recordVisit(1, "A", 0, t0);
+    expect(first.counted).toBe(true);
+    expect(first.totalVisits).toBe(1);
+
+    // 10 分钟后再连：只刷新最近连接时间
+    const again = store.recordVisit(1, "A", 0, t0 + 10 * 60_000);
+    expect(again.counted).toBe(false);
+    expect(again.totalVisits).toBe(1);
+    expect(store.snapshot(t0 + 10 * 60_000).todayConnections).toBe(1);
+
+    // 过了 30 分钟才算新的一次
+    const later = store.recordVisit(1, "A", 0, t0 + 31 * 60_000);
+    expect(later.counted).toBe(true);
+    expect(later.totalVisits).toBe(2);
+    expect(store.snapshot(t0 + 31 * 60_000).todayConnections).toBe(2);
+  });
+
+  test("冷却不跨自然日：跨天后即使不足 30 分钟也计入", async () => {
+    tempDir = await createTempDir("visit-cooldown-midnight");
+    const store = new VisitStatsStore(join(tempDir, "visit_stats.json"));
+    const late = new Date(2026, 0, 10, 23, 50, 0).getTime();
+
+    store.recordVisit(1, "A", 0, late);
+    // 20 分钟后已经是第二天
+    const nextDay = store.recordVisit(1, "A", 0, late + 20 * 60_000);
+    expect(nextDay.counted).toBe(true);
+    expect(nextDay.totalVisits).toBe(2);
+    expect(nextDay.recordedDays).toBe(2);
+  });
+
   test("落盘后可重新加载", async () => {
     tempDir = await createTempDir("visit-persist");
     const path = join(tempDir, "visit_stats.json");
+    const t0 = new Date(2026, 0, 10, 12, 0, 0).getTime();
 
     const store = new VisitStatsStore(path);
-    store.recordVisit(100, "Alice", 5);
+    store.recordVisit(100, "Alice", 5, t0);
     await store.flush();
 
     const reloaded = new VisitStatsStore(path);
     await reloaded.load();
-    const out = reloaded.recordVisit(100, "Alice", 5);
+    // 超过冷却期再连，才算新的一次
+    const out = reloaded.recordVisit(100, "Alice", 5, t0 + 31 * 60_000);
     expect(out.number).toBe(1);
     // 历史 5 次 + 上次 1 次 + 本次 1 次
     expect(out.totalVisits).toBe(7);
@@ -220,7 +259,7 @@ describe("社区面板 HTTP 接口", () => {
     const running = await startServer({
       port: 0,
       configPath: join(tempDir, "server_config.yml"),
-      config: { monitors: [], http_service: true, http_port: 0, replay_base_dir: tempDir }
+      config: { monitors: [], http_service: true, http_port: 0, replay_base_dir: tempDir, admin_data_path: join(tempDir, "admin_data.json") }
     });
     const port = running.address().port;
     const httpPort = running.http!.address().port;
@@ -260,7 +299,7 @@ describe("社区面板 HTTP 接口", () => {
     const running = await startServer({
       port: 0,
       configPath: join(tempDir, "server_config.yml"),
-      config: { monitors: [], http_service: true, http_port: 0, replay_base_dir: tempDir }
+      config: { monitors: [], http_service: true, http_port: 0, replay_base_dir: tempDir, admin_data_path: join(tempDir, "admin_data.json") }
     });
     const port = running.address().port;
     const httpPort = running.http!.address().port;
@@ -281,6 +320,39 @@ describe("社区面板 HTTP 接口", () => {
       expect(res.roomStats.easter.hello).toBe(1);
       // 原文不入库：响应里只给聚合值
       expect(JSON.stringify(res.roomStats)).not.toContain("room123");
+    } finally {
+      await alice.close();
+      await running.close();
+    }
+  }, 20000);
+  test("白名单账号不计入访问统计", async () => {
+    tempDir = await createTempDir("visit-excluded");
+
+    const running = await startServer({
+      port: 0,
+      configPath: join(tempDir, "server_config.yml"),
+      config: {
+        monitors: [],
+        http_service: true,
+        http_port: 0,
+        replay_base_dir: tempDir,
+        admin_data_path: join(tempDir, "admin_data.json"),
+        stats_excluded_user_ids: [100]
+      }
+    });
+    const port = running.address().port;
+    const httpPort = running.http!.address().port;
+    const base = `http://127.0.0.1:${httpPort}`;
+
+    const alice = await Client.connect("127.0.0.1", port);
+    try {
+      await alice.authenticate("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+      // 连上后仍是在线用户，但统计里不该出现
+      const res = await originalFetch(`${base}/stats/server`).then((r) => r.json() as any);
+      expect(res.totalAccounts).toBe(0);
+      expect(res.todayConnections).toBe(0);
+      expect(res.todayNewAccounts).toBe(0);
+      expect(res.onlineUsers).toBe(1);
     } finally {
       await alice.close();
       await running.close();

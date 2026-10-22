@@ -102,6 +102,13 @@ MONITORS:
 TEST_ACCOUNT_IDS:
   - 1739989
 
+# 不计入访问统计的账号 ID 列表（游玩排行 / 用户粘性文案都不统计）
+# 保活检测号会每隔几分钟登录一次探测服务器状态，计进去会污染「第 X 次来到这里」
+# 与今日连接数，所以默认忽略。MONITORS 与 TEST_ACCOUNT_IDS 里的账号也会自动排除。
+# 默认值：[1902111]
+STATS_EXCLUDED_USER_IDS:
+  - 1902111
+
 # 服务器名称，会显示在欢迎信息中
 SERVER_NAME: Phira MP
 

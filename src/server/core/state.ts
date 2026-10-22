@@ -130,6 +130,18 @@ export class ServerState {
   /** 账号级访问统计：次数 / 首末日期 / 永久编号 / 全局日计数，落盘到 data/visit_stats.json */
   readonly visitStats: VisitStatsStore;
 
+  /**
+   * 判断某账号是否不计入统计。
+   * 命中来源：stats_excluded_user_ids（默认含保活检测号）+ monitors + test_account_ids。
+   * 监控号与测试号本来就不是真实玩家，混进排行和「第 X 次到访」里会污染数据。
+   */
+  isStatsExcluded(userId: number): boolean {
+    const excluded = this.config.stats_excluded_user_ids ?? [];
+    if (excluded.includes(userId)) return true;
+    if (this.config.monitors.includes(userId)) return true;
+    return (this.config.test_account_ids ?? []).includes(userId);
+  }
+
   // ========== WebSocket / HTTP 服务引用 ==========
 
   /** WebSocket 服务引用（仅在 HTTP 服务启用时存在） */
