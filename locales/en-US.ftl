@@ -72,7 +72,7 @@ visit-late-night = It is { $hour } AM — the server stays lit for those still a
 visit-server-day = Today is day { $day } of the server.
 visit-today-ordinal = { $count} people have connected today; you are #{ $ordinal}.
 visit-online-summary = { $users } online now, across { $rooms } rooms.
-visit-daily-quote = Today's line: "{ $quote }" — { $from }
+visit-quote = “{ $quote }”
 see-our-web-migration-0 = >Notice: the server address will change to phira.danieluu.top:26638, please switch in time!<
 see-our-web-migration-1 = >Old phira.danieltoyama.fun:26638=>phira.danieluu.top:26638<
 chat-group-0 = Join us QQ Group Chat with us！

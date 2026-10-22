@@ -1,6 +1,6 @@
 import { roomIdToString } from "../../../common/roomId.js";
 import { isHiddenRoomId } from "../../game/roomUtils.js";
-import { quoteForDate } from "../../stats/dailyQuote.js";
+import { randomQuote } from "../../stats/dailyQuote.js";
 import type { RequestContext } from "./types.js";
 
 /** /room 列表缓存 TTL（毫秒） */
@@ -202,10 +202,9 @@ export async function tryHandlePublicRoutes(ctx: RequestContext): Promise<boolea
     return true;
   }
 
-  // 社区面板（无需鉴权）：服务器天数 / 账号数 / 今日连接 / 在线 / 房间 / 房间名看板 / 每日一句
+  // 社区面板（无需鉴权）：服务器天数 / 账号数 / 今日连接 / 在线 / 房间 / 房间名看板 / 一言
   if (req.method === "GET" && url.pathname === "/stats/server") {
     const snap = state.visitStats.snapshot();
-    const daily = quoteForDate(snap.today);
     write(200, {
       ok: true,
       bornDate: snap.bornDate,
@@ -218,7 +217,8 @@ export async function tryHandlePublicRoutes(ctx: RequestContext): Promise<boolea
       onlineUsers: state.users.size,
       rooms: state.rooms.size,
       roomStats: snap.roomStats,
-      dailyQuote: daily
+      // 每次请求随机一条，前端每次打开看到的都不一样
+      quote: randomQuote()
     });
     return true;
   }

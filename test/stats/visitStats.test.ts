@@ -3,7 +3,7 @@ import { afterEach, beforeAll, afterAll, describe, expect, test } from "vitest";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { VisitStatsStore, toDateKey, VISIT_MILESTONES } from "../../src/server/stats/visitStats.js";
-import { quoteForDate, quoteCount } from "../../src/server/stats/dailyQuote.js";
+import { randomQuote, quoteCount } from "../../src/server/stats/dailyQuote.js";
 import { Client } from "../../src/client/client.js";
 import { startServer } from "../../src/server/core/server.js";
 import { createTempDir, cleanupTempDir, setupMockFetch, waitFor, sleep } from "../helpers.js";
@@ -214,25 +214,32 @@ describe("访问统计存储", () => {
   });
 });
 
-describe("每日一句", () => {
-  test("同一天固定同一条，且库非空", () => {
+describe("一言", () => {
+  test("库非空，返回内容与出处", () => {
     expect(quoteCount()).toBeGreaterThan(100);
-    const a = quoteForDate("2026-10-19");
-    const b = quoteForDate("2026-10-19");
-    expect(a).toEqual(b);
+    const a = randomQuote();
     expect(a.quote.length).toBeGreaterThan(0);
     expect(a.from.length).toBeGreaterThan(0);
   });
 
-  test("连续日期会取到不同条目", () => {
-    const keys = ["2026-10-19", "2026-10-20", "2026-10-21", "2026-10-22"];
-    const seen = new Set(keys.map((k) => quoteForDate(k).quote));
-    expect(seen.size).toBeGreaterThan(2);
+  test("连续两次不会重复", () => {
+    let prev = randomQuote();
+    for (let i = 0; i < 30; i++) {
+      const next = randomQuote();
+      expect(next.quote).not.toBe(prev.quote);
+      prev = next;
+    }
+  });
+
+  test("多次取用能覆盖到不同条目", () => {
+    const seen = new Set<string>();
+    for (let i = 0; i < 60; i++) seen.add(randomQuote().quote);
+    expect(seen.size).toBeGreaterThan(10);
   });
 
   test("条目长度受控，适合客户端一行展示", () => {
-    for (const key of ["2026-01-01", "2026-06-15", "2026-12-31"]) {
-      expect(quoteForDate(key).quote.length).toBeLessThanOrEqual(40);
+    for (let i = 0; i < 50; i++) {
+      expect(randomQuote().quote.length).toBeLessThanOrEqual(40);
     }
   });
 });
@@ -270,7 +277,7 @@ describe("社区面板 HTTP 接口", () => {
       const before = await originalFetch(`${base}/stats/server`).then((r) => r.json() as any);
       expect(before).toMatchObject({ ok: true, totalAccounts: 0, todayConnections: 0 });
       expect(typeof before.serverDay).toBe("number");
-      expect(typeof before.dailyQuote.quote).toBe("string");
+      expect(typeof before.quote.quote).toBe("string");
 
       await alice.authenticate("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 

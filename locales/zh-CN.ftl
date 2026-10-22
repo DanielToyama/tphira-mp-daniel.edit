@@ -72,7 +72,7 @@ visit-late-night = 凌晨 { $hour } 点，服务器为还醒着的人亮着。
 visit-server-day = 今天是服务器第 { $day } 天。
 visit-today-ordinal = 今天已有 { $count } 人连入，你是第 { $ordinal } 位。
 visit-online-summary = 当前在线 { $users } 人，来自 { $rooms } 个房间。
-visit-daily-quote = 今天的一句话是：「{ $quote }」——{ $from }
+visit-quote = 「{ $quote }」
 see-our-web-migration-0 = >公告服务器地址即将更换为phira.danieluu.top:26638，请及时更换！<
 see-our-web-migration-1 = >原phira.danieltoyama.fun:26638=>phira.danieluu.top:26638<
 chat-group-0 = 来加入我们的群组一起聊天吧！

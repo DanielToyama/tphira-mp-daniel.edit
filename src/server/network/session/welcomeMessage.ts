@@ -8,7 +8,7 @@ import type { ServerState } from "../../core/state.js";
 import type { User } from "../../game/user.js";
 import type { Language } from "../../utils/l10n.js";
 import { getAvailableRoomsText } from "./roomListCache.js";
-import { quoteForDate } from "../../stats/dailyQuote.js";
+import { randomQuote } from "../../stats/dailyQuote.js";
 import {
   LATE_NIGHT_END_HOUR,
   LATE_NIGHT_START_HOUR,
@@ -129,9 +129,8 @@ export function buildVisitLines(opts: {
   );
   lines.push(lang.format("visit-online-summary", { users: String(onlineCount), rooms: String(roomCount) }));
 
-  // ---- 每日一句 ----
-  const daily = quoteForDate(global.today);
-  lines.push(lang.format("visit-daily-quote", { quote: daily.quote, from: daily.from }));
+  // ---- 一言：每次连接随机一条，只输出「正文」这一行 ----
+  lines.push(lang.format("visit-quote", { quote: randomQuote().quote }));
 
   return lines;
 }

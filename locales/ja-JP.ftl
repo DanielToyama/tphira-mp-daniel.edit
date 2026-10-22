@@ -72,7 +72,7 @@ visit-late-night = 深夜 { $hour} 時、サーバーはまだ起きている人
 visit-server-day = 今日はサーバー { $day } 日目です。
 visit-today-ordinal = 今日は { $count } 人が接続し、あなたは { $ordinal} 人目です。
 visit-online-summary = 現在 { $users } 人がオンライン、{ $rooms } 部屋に分かれています。
-visit-daily-quote = 今日のひと言：「{ $quote }」——{ $from }
+visit-quote = 「{ $quote }」
 see-our-web-migration-0 = >お知らせ：サーバーアドレスは phira.danieluu.top:26638 に変更されます。お早めに切り替えてください！<
 see-our-web-migration-1 = >旧 phira.danieltoyama.fun:26638=>phira.danieluu.top:26638<
 chat-group-0 = QQグループに参加して一緒にチャットしましょう！

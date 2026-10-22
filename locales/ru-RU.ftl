@@ -72,7 +72,7 @@ visit-late-night = { $hour}:00 ночи — сервер горит для те�
 visit-server-day = Сегодня день { $day } существования сервера.
 visit-today-ordinal = Сегодня подключилось { $count} чел., вы №{ $ordinal}.
 visit-online-summary = Сейчас онлайн { $users } чел. в { $rooms } комнатах.
-visit-daily-quote = Строка дня: «{ $quote }» — { $from }
+visit-quote = «{ $quote }»
 see-our-web-migration-0 = >Объявление: адрес сервера изменится на phira.danieluu.top:26638, пожалуйста, переключитесь заранее!<
 see-our-web-migration-1 = >Было phira.danieltoyama.fun:26638=>phira.danieluu.top:26638<
 chat-group-0 = Присоединяйтесь к нашей группе QQ и общайтесь с нами!
